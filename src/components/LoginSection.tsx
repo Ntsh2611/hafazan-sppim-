@@ -55,7 +55,7 @@ export const LoginSection: React.FC<LoginSectionProps> = ({
                 inputMode="numeric"
                 value={icInput}
                 onChange={(e) => setIcInput(e.target.value)}
-                placeholder="cth. 150424040238"
+                placeholder="Masukkan No. IC"
                 className="w-full bg-[var(--night)] border-2 border-[var(--line)] group-hover:border-[var(--line-bright)] focus:border-[var(--gold)] rounded-2xl px-5 py-4 text-xl sm:text-2xl font-bold tracking-wider text-[var(--ink)] placeholder:text-slate-600 focus:outline-none transition-all shadow-inner"
                 disabled={isLoading}
                 autoFocus
