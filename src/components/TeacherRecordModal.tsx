@@ -2,7 +2,11 @@ import React, { useState } from 'react';
 import { X, Check, Download, Save, Award, RefreshCw, Star } from 'lucide-react';
 import { SemakKemajuanResult } from '../types/hafazan';
 import { SURAH_LIST } from '../data/surahData';
-import { saveLocalStudentMark, generateUpdatedCSV } from '../services/appsScriptService';
+import {
+  saveLocalStudentMark,
+  generateUpdatedCSV,
+  saveStudentMarksToGoogleSheet,
+} from '../services/appsScriptService';
 
 interface TeacherRecordModalProps {
   isOpen: boolean;
@@ -67,13 +71,16 @@ export const TeacherRecordModal: React.FC<TeacherRecordModalProps> = ({
     });
   };
 
-  const handleSaveAll = () => {
+  const handleSaveAll = async () => {
     setSaving(true);
-    // Save to local storage for this student
+    // 1. Save to local storage for this student
     SURAH_LIST.forEach((s, idx) => {
       const val = localMarks[idx];
       saveLocalStudentMark(data.ic, idx, val !== undefined ? val : 0);
     });
+
+    // 2. Push to Google Sheet via Apps Script in background
+    saveStudentMarksToGoogleSheet(data.ic, localMarks).catch(() => {});
 
     setTimeout(() => {
       setSaving(false);

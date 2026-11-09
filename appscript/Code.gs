@@ -81,6 +81,11 @@ function doGet(e) {
   var action = (e && e.parameter && e.parameter.action) || 'semakKemajuan';
   var ic = (e && e.parameter && e.parameter.ic) ? e.parameter.ic : '';
   
+  if (action === 'segerakSemua' || action === 'senaraiSemuaData') {
+    var semuaData = dapatkanSemuaDataMurid();
+    return outputJson(semuaData);
+  }
+
   if (action === 'senaraiMurid') {
     var muridList = dapatkanSenaraiMurid();
     return outputJson(muridList);
@@ -105,6 +110,11 @@ function doPost(e) {
     var rawData = e.postData.contents;
     var data = JSON.parse(rawData);
     
+    if (data.action === 'simpanMarkahMurid') {
+      var res = simpanMarkahMurid(data.ic, data.marks);
+      return outputJson(res);
+    }
+
     if (data.action === 'simpanMarkah') {
       var res = simpanMarkah(data.ic, data.surahIndex, data.markah);
       return outputJson(res);
@@ -254,3 +264,84 @@ function simpanMarkah(inputIc, surahIndex, markah) {
     return { ok: false, error: err.toString() };
   }
 }
+
+/**
+ * Dapatkan semua rekod 68 murid beserta markah lengkap 41 surah secara pukal
+ */
+function dapatkanSemuaDataMurid() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getActiveSheet();
+    var allData = sheet.getDataRange().getValues();
+    var muridList = [];
+
+    // Baris data bermula pada baris ke-5 (indeks 4)
+    for (var r = 4; r < allData.length; r++) {
+      var row = allData[r];
+      var bil = row[0];
+      var namaMurid = row[1];
+      var kelas = row[2];
+      var noIc = bersihkanIC(row[3]);
+
+      if (namaMurid && noIc) {
+        var startSurahCol = 4; // Lajur E (indeks 4)
+        var marks = {};
+        for (var s = 0; s < SENARAI_SURAH.length; s++) {
+          var val = row[startSurahCol + s];
+          if (val !== "" && val !== null && val !== undefined && !isNaN(val)) {
+            marks[s] = Number(val);
+          }
+        }
+
+        muridList.push({
+          bil: bil,
+          name: namaMurid,
+          klass: kelas,
+          ic: noIc,
+          marks: marks
+        });
+      }
+    }
+
+    return {
+      ok: true,
+      timestamp: new Date().toISOString(),
+      count: muridList.length,
+      students: muridList
+    };
+  } catch (err) {
+    return { ok: false, error: 'Ralat membaca Google Sheet: ' + err.toString() };
+  }
+}
+
+/**
+ * Simpan markah penuh murid (objek { [surahIndex]: markah }) ke dalam baris Google Sheet
+ */
+function simpanMarkahMurid(inputIc, marks) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getActiveSheet();
+    var allData = sheet.getDataRange().getValues();
+    var targetIc = bersihkanIC(inputIc);
+
+    for (var r = 4; r < allData.length; r++) {
+      var noIc = bersihkanIC(allData[r][3]);
+      if (noIc && noIc === targetIc) {
+        var targetRow = r + 1; // 1-indexed
+        var startSurahCol = 5; // Lajur E (1-indexed ialah 5)
+
+        for (var s = 0; s < SENARAI_SURAH.length; s++) {
+          var val = (marks && marks[s] !== undefined && marks[s] > 0) ? marks[s] : "";
+          sheet.getRange(targetRow, startSurahCol + s).setValue(val);
+        }
+
+        return { ok: true, message: 'Semua markah berjaya disimpan ke Google Sheet.' };
+      }
+    }
+
+    return { ok: false, error: 'Murid dengan IC ' + inputIc + ' tidak dijumpai.' };
+  } catch (err) {
+    return { ok: false, error: err.toString() };
+  }
+}
+

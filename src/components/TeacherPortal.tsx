@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Users,
   BarChart3,
@@ -16,6 +16,7 @@ import {
   Flame,
   Check,
   RotateCcw,
+  RefreshCw,
 } from 'lucide-react';
 import {
   calculateComprehensiveAnalytics,
@@ -25,7 +26,12 @@ import {
 } from '../services/studentStatsService';
 import { INITIAL_STUDENTS } from '../data/studentsData';
 import { SURAH_LIST, YEAR_COLORS } from '../data/surahData';
-import { getLocalMarks, generateUpdatedCSV, clearAllLocalMarks } from '../services/appsScriptService';
+import {
+  getLocalMarks,
+  generateUpdatedCSV,
+  clearAllLocalMarks,
+  syncAllStudentsFromGoogleSheet,
+} from '../services/appsScriptService';
 import { StudentRecord } from '../types/hafazan';
 
 interface TeacherPortalProps {
@@ -46,6 +52,31 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
   const [studentSearch, setStudentSearch] = useState('');
   const [studentClassFilter, setStudentClassFilter] = useState<string>('all');
   const [, setRefreshKey] = useState<number>(0);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [syncFeedback, setSyncFeedback] = useState<{ success: boolean; message: string } | null>(null);
+
+  // Auto-sync in background on mount if Apps Script is configured
+  useEffect(() => {
+    if (appsScriptConfigured) {
+      syncAllStudentsFromGoogleSheet().then((res) => {
+        if (res.success) {
+          setRefreshKey((prev) => prev + 1);
+        }
+      });
+    }
+  }, [appsScriptConfigured]);
+
+  const handleSyncGoogleSheet = async () => {
+    setIsSyncing(true);
+    setSyncFeedback(null);
+    const result = await syncAllStudentsFromGoogleSheet();
+    setIsSyncing(false);
+    setSyncFeedback(result);
+    if (result.success) {
+      setRefreshKey((prev) => prev + 1);
+      setTimeout(() => setSyncFeedback(null), 5000);
+    }
+  };
 
   const analytics = calculateComprehensiveAnalytics();
   const marksMap = getLocalMarks();
@@ -102,6 +133,18 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            {/* Sync from Google Sheet Button */}
+            <button
+              type="button"
+              disabled={isSyncing}
+              onClick={handleSyncGoogleSheet}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[var(--gold)] hover:bg-[#ffc65c] text-[#241800] text-xs font-bold transition-all shadow-md cursor-pointer disabled:opacity-50"
+              title="Segerak semua markah murid terus dari fail Google Sheet"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+              <span>{isSyncing ? 'Menyegerakkan...' : 'Segerak Dari Google Sheet'}</span>
+            </button>
+
             <button
               type="button"
               onClick={handleResetToOriginalData}
@@ -135,6 +178,26 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Sync Feedback Toast Banner */}
+        {syncFeedback && (
+          <div
+            className={`mt-4 p-3 rounded-xl text-xs font-semibold flex items-center justify-between border ${
+              syncFeedback.success
+                ? 'bg-[var(--mint)]/15 border-[var(--mint)] text-[var(--mint)]'
+                : 'bg-[var(--rose)]/15 border-[var(--rose)] text-[var(--rose)]'
+            }`}
+          >
+            <span>{syncFeedback.message}</span>
+            <button
+              type="button"
+              onClick={() => setSyncFeedback(null)}
+              className="text-[10px] underline ml-2 cursor-pointer"
+            >
+              Tutup
+            </button>
+          </div>
+        )}
 
         {/* Navigation Tabs */}
         <div className="flex items-center gap-2 mt-6 pt-4 border-t border-[var(--line)]/60">

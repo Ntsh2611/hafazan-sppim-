@@ -93,6 +93,98 @@ export async function testAppsScriptConnection(url: string): Promise<{ success: 
   }
 }
 
+export async function syncAllStudentsFromGoogleSheet(): Promise<{
+  success: boolean;
+  message: string;
+  count?: number;
+}> {
+  const url = getSavedAppsScriptUrl();
+  if (!url || !url.startsWith('http')) {
+    return {
+      success: false,
+      message: 'Sila masukkan URL Google Apps Script terlebih dahulu.',
+    };
+  }
+
+  try {
+    const fetchUrl = `${url}${url.includes('?') ? '&' : '?'}action=segerakSemua`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
+    const response = await fetch(fetchUrl, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      return {
+        success: false,
+        message: `Pelayan Google membalas status HTTP ${response.status}`,
+      };
+    }
+
+    const data = await response.json();
+    if (!data.ok || !Array.isArray(data.students)) {
+      return {
+        success: false,
+        message: data.error || 'Format data Google Sheet tidak sah.',
+      };
+    }
+
+    // Save all marks into local marks storage
+    const newMarksMap: Record<string, Record<number, number>> = {};
+    data.students.forEach((st: { ic: string; marks?: Record<number, number> }) => {
+      if (st.ic && st.marks) {
+        newMarksMap[cleanIC(st.ic)] = st.marks;
+      }
+    });
+
+    localStorage.setItem(LOCAL_MARKS_KEY, JSON.stringify(newMarksMap));
+    return {
+      success: true,
+      message: `Berjaya menyegerakkan data ${data.students.length} murid secara langsung dari Google Sheet!`,
+      count: data.students.length,
+    };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    return {
+      success: false,
+      message: `Gagal menyegerakkan data: ${errorMsg}. Pastikan Apps Script aktif dengan akses 'Anyone'.`,
+    };
+  }
+}
+
+export async function saveStudentMarksToGoogleSheet(
+  ic: string,
+  marks: Record<number, number>
+): Promise<boolean> {
+  const url = getSavedAppsScriptUrl();
+  if (!url || !url.startsWith('http')) return false;
+
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8',
+      },
+      body: JSON.stringify({
+        action: 'simpanMarkahMurid',
+        ic: cleanIC(ic),
+        marks: marks,
+      }),
+      mode: 'no-cors',
+    });
+    return true;
+  } catch (e) {
+    console.error('Failed saving to Google Sheet via Apps Script:', e);
+    return false;
+  }
+}
+
 export async function fetchKemajuanMurid(ic: string): Promise<SemakKemajuanResult> {
   const targetIc = cleanIC(ic);
   const appScriptUrl = getSavedAppsScriptUrl();
