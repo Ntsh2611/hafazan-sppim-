@@ -7,6 +7,10 @@ const LOCAL_MARKS_KEY = 'hafazan_local_student_marks';
 
 export function getSavedAppsScriptUrl(): string {
   try {
+    const envUrl = import.meta.env.VITE_APPS_SCRIPT_URL;
+    if (envUrl && typeof envUrl === 'string' && envUrl.trim().startsWith('http')) {
+      return envUrl.trim();
+    }
     return localStorage.getItem(APPS_SCRIPT_URL_KEY) || '';
   } catch {
     return '';
