@@ -1,0 +1,67 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    --night: #0f1830;
+    --panel: #172345;
+    --panel-2: #1f2f5c;
+    --line: #2f4177;
+    --ink: #f3efe3;
+    --muted: #a3b3da;
+    --gold: #f2b84b;
+    --mint: #35c795;
+    --rose: #ff8a98;
+    --t0: #7d8fb8;
+    --t1: #cf8f5a;
+    --t2: #c9d3e2;
+    --t3: #f2b84b;
+    --t4: #5fd3c8;
+    --t5: #6f9bff;
+    --t6: #c792ff;
+  }
+
+  body {
+    background-color: var(--night);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='.045' stroke-width='1'%3E%3Crect x='14' y='14' width='36' height='36'/%3E%3Crect x='14' y='14' width='36' height='36' transform='rotate(45 32 32)'/%3E%3C/g%3E%3C/svg%3E");
+    color: var(--ink);
+    font-family: 'Nunito', system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: 'Baloo 2', 'Trebuchet MS', system-ui, sans-serif;
+    font-weight: 800;
+  }
+}
+
+/* Animations & Components */
+@keyframes heroDrop {
+  from {
+    transform: translateY(-24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes standRise {
+  from {
+    transform: translateY(40px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-hero-drop {
+  animation: heroDrop 0.7s cubic-bezier(0.2, 0.9, 0.3, 1.2) backwards 0.25s;
+}
+
+.animate-stand-rise {
+  animation: standRise 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.1) backwards;
+}

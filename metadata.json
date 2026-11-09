@@ -1,0 +1,6 @@
+{
+  "name": "Hafazan Tracker SPPIM 2027",
+  "description": "Aplikasi semakan kemajuan hafazan murid SPPIM menggunakan No. IC berpandukan Google Sheet dan Google Apps Script.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
