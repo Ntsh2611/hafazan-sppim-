@@ -15,15 +15,17 @@ import {
   Layers,
   Flame,
   Check,
+  RotateCcw,
 } from 'lucide-react';
 import {
   calculateComprehensiveAnalytics,
   detectGender,
   StudentLoginStat,
+  clearStudentLogins,
 } from '../services/studentStatsService';
 import { INITIAL_STUDENTS } from '../data/studentsData';
 import { SURAH_LIST, YEAR_COLORS } from '../data/surahData';
-import { getLocalMarks, generateUpdatedCSV } from '../services/appsScriptService';
+import { getLocalMarks, generateUpdatedCSV, clearAllLocalMarks } from '../services/appsScriptService';
 import { StudentRecord } from '../types/hafazan';
 
 interface TeacherPortalProps {
@@ -43,6 +45,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
   const [surahYearFilter, setSurahYearFilter] = useState<number | 'all'>('all');
   const [studentSearch, setStudentSearch] = useState('');
   const [studentClassFilter, setStudentClassFilter] = useState<string>('all');
+  const [, setRefreshKey] = useState<number>(0);
 
   const analytics = calculateComprehensiveAnalytics();
   const marksMap = getLocalMarks();
@@ -74,6 +77,12 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
     document.body.removeChild(link);
   };
 
+  const handleResetToOriginalData = () => {
+    clearAllLocalMarks();
+    clearStudentLogins();
+    setRefreshKey((prev) => prev + 1);
+  };
+
   return (
     <div className="flex flex-col gap-6 my-4">
       {/* Teacher Portal Header */}
@@ -93,6 +102,16 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <button
+              type="button"
+              onClick={handleResetToOriginalData}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[var(--panel-2)] border border-[var(--line)] hover:border-[var(--rose)] text-xs font-semibold text-[var(--muted)] hover:text-[var(--rose)] transition-colors cursor-pointer"
+              title="Kosongkan sebarang markah demo dan kembalikan ke data asli (0 markah)"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Set Semula Data Asli</span>
+            </button>
+
             <button
               type="button"
               onClick={onOpenAppsScript}

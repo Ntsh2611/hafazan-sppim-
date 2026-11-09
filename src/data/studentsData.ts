@@ -72,21 +72,12 @@ export const INITIAL_STUDENTS: StudentRecord[] = [
   { bil: 68, name: "SUMAYYAH BINTI EDAHAM", klass: "5 As-Syam", ic: "150428040286" },
 ];
 
-export const DEMO_SAMPLE_STUDENT = {
-  bil: 0,
-  name: "CONTOH MURID BINTI AHMAD",
-  klass: "5 Al-Lail",
-  ic: "000000000000"
-};
-
 export function cleanIC(ic: string): string {
   return String(ic).replace(/[^0-9A-Za-z]/g, '').trim().toUpperCase();
 }
 
 export function findLocalStudent(ic: string): StudentRecord | null {
   const target = cleanIC(ic);
-  if (target === cleanIC(DEMO_SAMPLE_STUDENT.ic)) {
-    return DEMO_SAMPLE_STUDENT;
-  }
   return INITIAL_STUDENTS.find(s => cleanIC(s.ic) === target) || null;
 }
+

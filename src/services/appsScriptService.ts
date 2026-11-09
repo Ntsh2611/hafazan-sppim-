@@ -1,6 +1,6 @@
 import { SemakKemajuanResult, StudentRecord } from '../types/hafazan';
 import { SURAH_LIST } from '../data/surahData';
-import { cleanIC, findLocalStudent, DEMO_SAMPLE_STUDENT, INITIAL_STUDENTS } from '../data/studentsData';
+import { cleanIC, findLocalStudent, INITIAL_STUDENTS } from '../data/studentsData';
 
 const APPS_SCRIPT_URL_KEY = 'hafazan_appscript_url';
 const LOCAL_MARKS_KEY = 'hafazan_local_student_marks';
@@ -21,32 +21,23 @@ export function saveAppsScriptUrl(url: string): void {
   }
 }
 
-// Stored local progress/marks per IC
+// Stored local progress/marks per IC (follows authentic Google Sheet data: starts clean at 0)
 export function getLocalMarks(): Record<string, Record<number, number>> {
   try {
     const raw = localStorage.getItem(LOCAL_MARKS_KEY);
     if (!raw) {
-      // Seed a couple sample student marks for immediate testing
-      const initialSeed: Record<string, Record<number, number>> = {
-        // Sample demo student: 26 surahs completed
-        [cleanIC(DEMO_SAMPLE_STUDENT.ic)]: Object.fromEntries(
-          SURAH_LIST.slice(0, 26).map((s, idx) => [idx, s.max])
-        ),
-        // Student 1 (ZARA BINTI DANIEL): has completed Tahun 1
-        [cleanIC('150424040238')]: Object.fromEntries(
-          SURAH_LIST.filter(s => s.y === 1).map((s, idx) => [idx, s.max])
-        ),
-        // Student 14 (ZAHIN AIDAN): has completed Tahun 1 & 2
-        [cleanIC('151212040097')]: Object.fromEntries(
-          SURAH_LIST.filter(s => s.y <= 2).map((s, idx) => [idx, s.max])
-        ),
-      };
-      return initialSeed;
+      return {};
     }
     return JSON.parse(raw);
   } catch {
     return {};
   }
+}
+
+export function clearAllLocalMarks(): void {
+  try {
+    localStorage.removeItem(LOCAL_MARKS_KEY);
+  } catch {}
 }
 
 export function saveLocalStudentMark(ic: string, surahIdx: number, mark: number): void {
@@ -69,7 +60,7 @@ export async function testAppsScriptConnection(url: string): Promise<{ success: 
   }
 
   try {
-    const testUrl = `${url}${url.includes('?') ? '&' : '?'}action=semakKemajuan&ic=${DEMO_SAMPLE_STUDENT.ic}`;
+    const testUrl = `${url}${url.includes('?') ? '&' : '?'}action=semakKemajuan&ic=${INITIAL_STUDENTS[0].ic}`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 9000);
 
@@ -181,7 +172,7 @@ export async function fetchKemajuanMurid(ic: string): Promise<SemakKemajuanResul
     klass: localStudent.klass,
     ic: targetIc,
     surahs: surahs,
-    source: targetIc === cleanIC(DEMO_SAMPLE_STUDENT.ic) ? 'demo' : 'local',
+    source: 'local',
   };
 }
 

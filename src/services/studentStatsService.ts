@@ -20,7 +20,7 @@ export function detectGender(name: string): 'Lelaki' | 'Perempuan' {
   return 'Lelaki';
 }
 
-// Seed initial realistic login data so analytics are immediately informative
+// Authentic student login counter (increments only when actual student searches their IC)
 export function getStudentLogins(): Record<string, number> {
   try {
     const raw = localStorage.getItem(LOGIN_STATS_KEY);
@@ -30,26 +30,13 @@ export function getStudentLogins(): Record<string, number> {
   } catch (e) {
     console.error('Failed reading login stats:', e);
   }
+  return {};
+}
 
-  // Initial seed with varying login counts
-  const seed: Record<string, number> = {};
-  INITIAL_STUDENTS.forEach((student, index) => {
-    // Generate realistic distribution: some active students check 10-24 times, others 2-9 times
-    const base = ((student.bil * 7 + 13) % 19) + 2;
-    seed[cleanIC(student.ic)] = base;
-  });
-
-  // Top active students
-  seed[cleanIC('150424040238')] = 28; // Zara Binti Daniel
-  seed[cleanIC('151212040097')] = 24; // Zahin Aidan
-  seed[cleanIC('150611030633')] = 21; // Ahmad Khair
-  seed[cleanIC('151021102814')] = 19; // Putri Aisyah
-
+export function clearStudentLogins(): void {
   try {
-    localStorage.setItem(LOGIN_STATS_KEY, JSON.stringify(seed));
+    localStorage.removeItem(LOGIN_STATS_KEY);
   } catch {}
-
-  return seed;
 }
 
 export function recordStudentLogin(ic: string): void {
