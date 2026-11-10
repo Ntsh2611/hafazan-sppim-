@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { Search, AlertCircle, ArrowRight, BookOpen, Link as LinkIcon } from 'lucide-react';
-import { AppsScriptModal } from './AppsScriptModal';
+import { Search, AlertCircle, ArrowRight } from 'lucide-react';
 
 interface LoginSectionProps {
   onSearch: (ic: string) => Promise<void>;
@@ -14,7 +13,6 @@ export const LoginSection: React.FC<LoginSectionProps> = ({
   errorMessage,
 }) => {
   const [icInput, setIcInput] = useState('');
-  const [isAppsScriptOpen, setIsAppsScriptOpen] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,7 +29,7 @@ export const LoginSection: React.FC<LoginSectionProps> = ({
         <div className="absolute -top-20 -right-20 w-64 h-64 bg-[var(--gold)]/10 rounded-full blur-3xl pointer-events-none" />
 
         {/* Header with App Icon */}
-        <div className="flex items-center gap-3.5 mb-5">
+        <div className="flex items-center gap-3.5 mb-6">
           <div className="w-14 h-14 rounded-2xl overflow-hidden border-2 border-[var(--gold)]/40 shadow-md shrink-0 bg-[var(--night)]">
             <img
               src="/icons/icon-192.png"
@@ -108,26 +106,7 @@ export const LoginSection: React.FC<LoginSectionProps> = ({
             )}
           </button>
         </form>
-
-        {/* Quick Apps Script URL button for instant sync setup */}
-        <div className="mt-8 pt-4 border-t border-[var(--line)]/40 flex items-center justify-between text-[11px] text-[var(--muted)]">
-          <span className="opacity-70">Sambungan Google Apps Script & Sheet</span>
-          <button
-            type="button"
-            onClick={() => setIsAppsScriptOpen(true)}
-            className="inline-flex items-center gap-1 text-[var(--gold)] hover:underline opacity-80 hover:opacity-100 cursor-pointer"
-          >
-            <LinkIcon className="w-3 h-3" />
-            <span>Konfigurasi URL Google Apps Script</span>
-          </button>
-        </div>
       </div>
-
-      <AppsScriptModal
-        isOpen={isAppsScriptOpen}
-        onClose={() => setIsAppsScriptOpen(false)}
-        onUrlUpdated={() => {}}
-      />
     </section>
   );
 };
