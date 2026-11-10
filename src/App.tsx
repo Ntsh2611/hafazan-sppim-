@@ -10,7 +10,6 @@ import { Dashboard } from './components/Dashboard';
 import { TeacherPortal } from './components/TeacherPortal';
 import { AppsScriptModal } from './components/AppsScriptModal';
 import { TeacherRecordModal } from './components/TeacherRecordModal';
-import { PWAInstallModal } from './components/PWAInstallModal';
 import { SemakKemajuanResult, StudentRecord } from './types/hafazan';
 import { fetchKemajuanMurid, getSavedAppsScriptUrl } from './services/appsScriptService';
 import { recordStudentLogin } from './services/studentStatsService';
@@ -28,7 +27,6 @@ export default function App() {
 
   const [appsScriptUrl, setAppsScriptUrl] = useState<string>(() => getSavedAppsScriptUrl());
   const [isAppsScriptModalOpen, setIsAppsScriptModalOpen] = useState<boolean>(false);
-  const [isInstallModalOpen, setIsInstallModalOpen] = useState<boolean>(false);
   const [studentToGrade, setStudentToGrade] = useState<SemakKemajuanResult | null>(null);
 
   // Handle Search / Login
@@ -131,7 +129,6 @@ export default function App() {
           isTeacherMode={isTeacherMode}
           hasActiveStudent={!!activeStudent}
           onLogout={handleLogout}
-          onOpenInstallModal={() => setIsInstallModalOpen(true)}
           onTeacherLogin={() => handleSearch(TEACHER_IC)}
           onOpenAppsScript={() => setIsAppsScriptModalOpen(true)}
         />
@@ -146,16 +143,12 @@ export default function App() {
               appsScriptConfigured={!!appsScriptUrl}
             />
           ) : activeStudent ? (
-            <Dashboard
-              data={activeStudent}
-              onOpenInstallModal={() => setIsInstallModalOpen(true)}
-            />
+            <Dashboard data={activeStudent} />
           ) : (
             <LoginSection
               onSearch={handleSearch}
               isLoading={isLoading}
               errorMessage={errorMessage}
-              onOpenInstallModal={() => setIsInstallModalOpen(true)}
             />
           )}
         </main>
@@ -176,11 +169,6 @@ export default function App() {
         isOpen={isAppsScriptModalOpen}
         onClose={() => setIsAppsScriptModalOpen(false)}
         onUrlUpdated={(url) => setAppsScriptUrl(url)}
-      />
-
-      <PWAInstallModal
-        isOpen={isInstallModalOpen}
-        onClose={() => setIsInstallModalOpen(false)}
       />
 
       {studentToGrade && (

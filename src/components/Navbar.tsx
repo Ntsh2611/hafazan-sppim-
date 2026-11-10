@@ -1,11 +1,10 @@
 import React from 'react';
-import { BookOpen, LogOut, Smartphone } from 'lucide-react';
+import { BookOpen, LogOut } from 'lucide-react';
 
 interface NavbarProps {
   isTeacherMode: boolean;
   hasActiveStudent: boolean;
   onLogout: () => void;
-  onOpenInstallModal: () => void;
   onTeacherLogin?: () => void;
   onOpenAppsScript?: () => void;
 }
@@ -14,14 +13,17 @@ export const Navbar: React.FC<NavbarProps> = ({
   isTeacherMode,
   hasActiveStudent,
   onLogout,
-  onOpenInstallModal,
 }) => {
   return (
     <header className="flex items-center justify-between gap-4 py-3 border-b border-[var(--line)]">
       {/* Brand Zone */}
       <div className="flex items-center gap-3 shrink-0">
-        <div className="w-9 h-9 rounded-xl bg-[var(--panel-2)] border border-[var(--gold)] flex items-center justify-center text-[var(--gold)] shadow-sm">
-          <BookOpen className="w-5 h-5" />
+        <div className="w-10 h-10 rounded-xl overflow-hidden border border-[var(--gold)]/40 shadow-sm shrink-0 bg-[var(--night)]">
+          <img
+            src="/icons/icon-192.png"
+            alt="Hafazan SPPIM Icon"
+            className="w-full h-full object-cover"
+          />
         </div>
         <div>
           <span className="text-lg md:text-xl font-display text-[var(--ink)] tracking-tight">
@@ -41,18 +43,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Actions */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-        {/* Pasang ke Telefon / Simpan PWA */}
-        <button
-          type="button"
-          onClick={onOpenInstallModal}
-          title="Simpan ke Skrin Telefon (Kekal Log Masuk)"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-900/60 hover:bg-emerald-800/80 border border-emerald-500/40 text-emerald-200 hover:text-white transition-all cursor-pointer shadow-sm"
-        >
-          <Smartphone className="w-3.5 h-3.5 text-amber-300" />
-          <span className="hidden xs:inline">Pasang di Telefon</span>
-          <span className="xs:hidden">Pasang</span>
-        </button>
-
         {/* If logged in (either teacher or student) -> Logout button */}
         {(isTeacherMode || hasActiveStudent) && (
           <button

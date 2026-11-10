@@ -7,35 +7,26 @@ import {
   Sparkles,
   Trophy,
   ArrowRight,
-  Star,
-  Bell,
-  BellRing,
-  Smartphone,
-  CheckCircle2,
   Clock,
+  CheckCircle2,
+  Bell,
 } from 'lucide-react';
 import {
   getCurrentSurah,
   formatDailyNotificationBody,
-  triggerDeviceNotification,
   getNotificationPermission,
-  isDailyNotificationEnabled,
-  setDailyNotificationEnabled,
   requestNotificationPermission,
+  setDailyNotificationEnabled,
   getNextScheduledText,
 } from '../services/notificationService';
 
 interface DashboardProps {
   data: SemakKemajuanResult;
-  onOpenInstallModal?: () => void;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ data, onOpenInstallModal }) => {
-  // Notification states
+export const Dashboard: React.FC<DashboardProps> = ({ data }) => {
+  // Notification permission state
   const [permission, setPermission] = useState<string>(() => getNotificationPermission());
-  const [isEnabled, setIsEnabled] = useState<boolean>(() => isDailyNotificationEnabled());
-  const [isSending, setIsSending] = useState<boolean>(false);
-  const [notifFeedback, setNotifFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     setPermission(getNotificationPermission());
@@ -43,35 +34,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, onOpenInstallModal }
 
   const currentSurah = getCurrentSurah(data);
 
-  const handleToggleNotifications = async () => {
-    if (permission !== 'granted') {
-      const ok = await requestNotificationPermission();
-      setPermission(getNotificationPermission());
-      if (ok) {
-        setIsEnabled(true);
-        setDailyNotificationEnabled(true);
-        // Hantar notifikasi percubaan terus
-        handleTestNotification();
-      }
-    } else {
-      const next = !isEnabled;
-      setIsEnabled(next);
-      setDailyNotificationEnabled(next);
-    }
-  };
-
-  const handleTestNotification = async () => {
-    setIsSending(true);
-    setNotifFeedback(null);
-    try {
-      const res = await triggerDeviceNotification(data, { force: true });
-      setNotifFeedback(res.message);
-      setPermission(getNotificationPermission());
-      setTimeout(() => setNotifFeedback(null), 6000);
-    } catch {
-      setNotifFeedback('Gagal menghantar notifikasi.');
-    } finally {
-      setIsSending(false);
+  const handleEnableNotifications = async () => {
+    const ok = await requestNotificationPermission();
+    setPermission(getNotificationPermission());
+    if (ok) {
+      setDailyNotificationEnabled(true);
     }
   };
 
@@ -130,48 +97,28 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, onOpenInstallModal }
 
   return (
     <div className="flex flex-col gap-6 my-6">
-      {/* Top Banner: Student Identity Card */}
-      <section
-        className="bg-[var(--panel)] border-2 border-[var(--line)] rounded-3xl p-6 sm:p-8 shadow-xl relative overflow-hidden"
-        style={{ '--rank-col': currentRank.c } as React.CSSProperties}
-      >
+      {/* Top Banner: Student Identity Card (Info Pengguna: Hanya Nama, Kelas dan No IC) */}
+      <section className="bg-[var(--panel)] border-2 border-[var(--line)] rounded-3xl p-6 sm:p-8 shadow-xl relative overflow-hidden">
         {/* Glow backdrop */}
-        <div
-          className="absolute -top-16 -left-16 w-52 h-52 rounded-full blur-3xl opacity-20 pointer-events-none"
-          style={{ backgroundColor: currentRank.c }}
-        />
+        <div className="absolute -top-16 -left-16 w-52 h-52 bg-[var(--gold)]/10 rounded-full blur-3xl pointer-events-none" />
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <span
-                className="text-xs font-display font-extrabold uppercase px-3.5 py-1 rounded-full bg-[var(--panel-2)] border inline-flex items-center gap-1.5 shadow-sm"
-                style={{ color: currentRank.c, borderColor: currentRank.c }}
-              >
-                <Star className="w-3.5 h-3.5 fill-current" />
-                <span>Tahap {badgeCount} · {currentRank.n}</span>
-              </span>
-
-              <span className="text-xs font-bold text-[var(--gold)] bg-[var(--gold)]/10 px-3 py-1 rounded-full border border-[var(--gold)]/30">
-                Kelas {data.klass || 'SPPIM'}
-              </span>
-
-              <span className="text-xs font-mono text-[var(--muted)] bg-[var(--night)] px-2.5 py-1 rounded-md border border-[var(--line)]">
-                IC: {data.ic}
-              </span>
-            </div>
-
-            <h2
-              className="text-2xl sm:text-4xl font-display font-extrabold tracking-tight truncate pt-1"
-              style={{ color: currentRank.c }}
-            >
+          <div className="space-y-3">
+            {/* Nama Murid */}
+            <h2 className="text-2xl sm:text-4xl font-display font-extrabold tracking-tight text-[var(--ink)]">
               {formatName(data.name)}
             </h2>
 
-            <p className="text-xs sm:text-sm text-[var(--muted)]">
-              {currentRank.desc} · Pencapaian Semasa:{' '}
-              <b className="text-[var(--ink)] font-bold">{doneCount} / {list.length} surah selesai</b>
-            </p>
+            {/* Kelas dan Number IC */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className="text-xs font-bold text-[var(--gold)] bg-[var(--gold)]/15 px-3 py-1 rounded-full border border-[var(--gold)]/30">
+                Kelas: {data.klass || '6 SPPIM'}
+              </span>
+
+              <span className="text-xs font-mono font-medium text-[var(--ink)] bg-[var(--night)] px-3 py-1 rounded-full border border-[var(--line)]">
+                No. IC: {data.ic}
+              </span>
+            </div>
           </div>
 
           {/* Score Badge */}
@@ -180,7 +127,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, onOpenInstallModal }
               Markah Terkumpul
             </span>
             <div className="flex items-baseline sm:justify-end gap-1 mt-0.5">
-              <b className="text-3xl sm:text-4xl font-display" style={{ color: currentRank.c }}>
+              <b className="text-3xl sm:text-4xl font-display text-[var(--gold)]">
                 {totalScore}
               </b>
               <span className="text-xs text-[var(--muted)] font-mono">/ 100</span>
@@ -192,7 +139,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, onOpenInstallModal }
         </div>
       </section>
 
-      {/* Notification & Persistent Phone Session Banner (8.15 Malam) */}
+      {/* Notification Banner (Jam 8.15 Malam - Tanpa Butang Uji & Tanpa Ikon Pasang) */}
       <section className="bg-gradient-to-r from-[#042f24] via-[#064e3b] to-[#042f24] border-2 border-emerald-500/40 rounded-3xl p-5 sm:p-6 shadow-lg text-white">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="space-y-1.5 max-w-2xl">
@@ -209,50 +156,34 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, onOpenInstallModal }
                 </span>
               ) : (
                 <span className="text-[11px] text-amber-200/80 bg-amber-950/40 px-2 py-0.5 rounded-md border border-amber-500/30">
-                  Tekan untuk aktifkan notifikasi telefon jam 8.15 malam
+                  Peringatan jam 8.15 malam sedia diaktifkan
                 </span>
               )}
             </div>
 
             <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed pt-1">
-              Notifikasi peringatan surah semasa akan dihantar ke telefon setiap hari pada jam <strong>8.15 malam</strong>:
+              Notifikasi peringatan surah semasa dihantar ke telefon setiap hari pada jam <strong>8.15 malam</strong>:
             </p>
 
             {/* Notification message quote preview */}
             <div className="bg-black/30 border border-emerald-600/40 rounded-xl p-3 text-xs sm:text-sm font-medium text-amber-200 tracking-wide">
               {notificationPreviewText}
             </div>
-
-            {notifFeedback && (
-              <p className="text-xs font-semibold text-emerald-300 animate-pulse pt-1">
-                ✓ {notifFeedback}
-              </p>
-            )}
           </div>
 
-          {/* Action buttons */}
-          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-            <button
-              type="button"
-              onClick={handleToggleNotifications}
-              disabled={isSending}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-emerald-950 text-xs font-bold shadow-md transition-all cursor-pointer active:scale-95 disabled:opacity-50"
-            >
-              <Bell className="w-4 h-4 fill-emerald-950" />
-              <span>{permission === 'granted' ? 'Uji Notifikasi Sekarang' : 'Aktifkan Notifikasi'}</span>
-            </button>
-
-            {onOpenInstallModal && (
+          {/* Hanya butang Aktifkan jika kebenaran belum diberi (Tanpa butang Uji) */}
+          {permission !== 'granted' && (
+            <div className="shrink-0">
               <button
                 type="button"
-                onClick={onOpenInstallModal}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-900/80 hover:bg-emerald-800 text-white text-xs font-semibold border border-emerald-500/50 shadow-sm transition-all cursor-pointer"
+                onClick={handleEnableNotifications}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-emerald-950 text-xs font-bold shadow-md transition-all cursor-pointer active:scale-95"
               >
-                <Smartphone className="w-4 h-4 text-amber-300" />
-                <span>Simpan ke Skrin Utama</span>
+                <Bell className="w-4 h-4 fill-emerald-950" />
+                <span>Aktifkan Notifikasi</span>
               </button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </section>
 

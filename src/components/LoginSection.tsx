@@ -1,19 +1,17 @@
 import React, { useState } from 'react';
-import { Search, AlertCircle, ArrowRight, BookOpen, Smartphone, Link as LinkIcon } from 'lucide-react';
+import { Search, AlertCircle, ArrowRight, BookOpen, Link as LinkIcon } from 'lucide-react';
 import { AppsScriptModal } from './AppsScriptModal';
 
 interface LoginSectionProps {
   onSearch: (ic: string) => Promise<void>;
   isLoading: boolean;
   errorMessage: string | null;
-  onOpenInstallModal?: () => void;
 }
 
 export const LoginSection: React.FC<LoginSectionProps> = ({
   onSearch,
   isLoading,
   errorMessage,
-  onOpenInstallModal,
 }) => {
   const [icInput, setIcInput] = useState('');
   const [isAppsScriptOpen, setIsAppsScriptOpen] = useState(false);
@@ -32,14 +30,24 @@ export const LoginSection: React.FC<LoginSectionProps> = ({
         {/* Subtle accent glow */}
         <div className="absolute -top-20 -right-20 w-64 h-64 bg-[var(--gold)]/10 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold bg-[var(--panel-2)] border border-[var(--line)] text-[var(--gold)] w-fit mb-5">
-          <BookOpen className="w-3.5 h-3.5" />
-          <span>Sistem Rekod Hafazan SPPIM 2027</span>
+        {/* Header with App Icon */}
+        <div className="flex items-center gap-3.5 mb-5">
+          <div className="w-14 h-14 rounded-2xl overflow-hidden border-2 border-[var(--gold)]/40 shadow-md shrink-0 bg-[var(--night)]">
+            <img
+              src="/icons/icon-192.png"
+              alt="Hafazan SPPIM Icon"
+              className="w-full h-full object-cover"
+            />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[var(--panel-2)] border border-[var(--line)] text-[var(--gold)] w-fit mb-1">
+              <span>Sistem Rekod Hafazan SPPIM 2027</span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-display text-[var(--ink)] leading-tight">
+              Semak Kemajuan <span className="text-[var(--gold)]">Hafazan</span>
+            </h1>
+          </div>
         </div>
-
-        <h1 className="text-3xl sm:text-4xl font-display text-[var(--ink)] leading-tight mb-6">
-          Semak Kemajuan <span className="text-[var(--gold)]">Hafazan</span>
-        </h1>
 
         {/* Search Form */}
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -101,26 +109,8 @@ export const LoginSection: React.FC<LoginSectionProps> = ({
           </button>
         </form>
 
-        {/* PWA & Home Screen Tip */}
-        <div className="mt-8 pt-6 border-t border-[var(--line)]/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-[var(--muted)]">
-          <div className="flex items-center gap-2 text-emerald-300">
-            <Smartphone className="w-4 h-4 text-amber-300 shrink-0" />
-            <span>Simpan ke Skrin Utama telefon untuk <strong>kekal log masuk</strong> & terima notifikasi surah setiap hari jam 8.15 malam.</span>
-          </div>
-
-          {onOpenInstallModal && (
-            <button
-              type="button"
-              onClick={onOpenInstallModal}
-              className="px-3 py-1.5 rounded-lg bg-emerald-950/60 hover:bg-emerald-900 border border-emerald-600/40 text-emerald-200 font-semibold text-xs whitespace-nowrap transition-colors self-start sm:self-auto cursor-pointer"
-            >
-              Pasang ke Telefon
-            </button>
-          )}
-        </div>
-
         {/* Quick Apps Script URL button for instant sync setup */}
-        <div className="mt-4 pt-3 border-t border-[var(--line)]/30 flex items-center justify-between text-[11px] text-[var(--muted)]">
+        <div className="mt-8 pt-4 border-t border-[var(--line)]/40 flex items-center justify-between text-[11px] text-[var(--muted)]">
           <span className="opacity-70">Sambungan Google Apps Script & Sheet</span>
           <button
             type="button"
