@@ -1,15 +1,80 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { SemakKemajuanResult, StudentSurahProgress } from '../types/hafazan';
 import { RANKS } from '../data/surahData';
 import { PodiumSection } from './PodiumSection';
 import { SurahRoute } from './SurahRoute';
-import { Sparkles, Trophy, ArrowRight, Star } from 'lucide-react';
+import {
+  Sparkles,
+  Trophy,
+  ArrowRight,
+  Star,
+  Bell,
+  BellRing,
+  Smartphone,
+  CheckCircle2,
+  Clock,
+} from 'lucide-react';
+import {
+  getCurrentSurah,
+  formatDailyNotificationBody,
+  triggerDeviceNotification,
+  getNotificationPermission,
+  isDailyNotificationEnabled,
+  setDailyNotificationEnabled,
+  requestNotificationPermission,
+  getNextScheduledText,
+} from '../services/notificationService';
 
 interface DashboardProps {
   data: SemakKemajuanResult;
+  onOpenInstallModal?: () => void;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ data }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ data, onOpenInstallModal }) => {
+  // Notification states
+  const [permission, setPermission] = useState<string>(() => getNotificationPermission());
+  const [isEnabled, setIsEnabled] = useState<boolean>(() => isDailyNotificationEnabled());
+  const [isSending, setIsSending] = useState<boolean>(false);
+  const [notifFeedback, setNotifFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPermission(getNotificationPermission());
+  }, []);
+
+  const currentSurah = getCurrentSurah(data);
+
+  const handleToggleNotifications = async () => {
+    if (permission !== 'granted') {
+      const ok = await requestNotificationPermission();
+      setPermission(getNotificationPermission());
+      if (ok) {
+        setIsEnabled(true);
+        setDailyNotificationEnabled(true);
+        // Hantar notifikasi percubaan terus
+        handleTestNotification();
+      }
+    } else {
+      const next = !isEnabled;
+      setIsEnabled(next);
+      setDailyNotificationEnabled(next);
+    }
+  };
+
+  const handleTestNotification = async () => {
+    setIsSending(true);
+    setNotifFeedback(null);
+    try {
+      const res = await triggerDeviceNotification(data, { force: true });
+      setNotifFeedback(res.message);
+      setPermission(getNotificationPermission());
+      setTimeout(() => setNotifFeedback(null), 6000);
+    } catch {
+      setNotifFeedback('Gagal menghantar notifikasi.');
+    } finally {
+      setIsSending(false);
+    }
+  };
+
   // Calculate stats
   const list: StudentSurahProgress[] = data.surahs.map((s) => ({
     ...s,
@@ -60,6 +125,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ data }) => {
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
       .join(' ');
   };
+
+  const notificationPreviewText = formatDailyNotificationBody(formatName(data.name), currentSurah);
 
   return (
     <div className="flex flex-col gap-6 my-6">
@@ -121,6 +188,70 @@ export const Dashboard: React.FC<DashboardProps> = ({ data }) => {
             <span className="text-xs text-[var(--mint)] block mt-0.5 font-bold">
               {progressPercent}% Penguasaan
             </span>
+          </div>
+        </div>
+      </section>
+
+      {/* Notification & Persistent Phone Session Banner (8.15 Malam) */}
+      <section className="bg-gradient-to-r from-[#042f24] via-[#064e3b] to-[#042f24] border-2 border-emerald-500/40 rounded-3xl p-5 sm:p-6 shadow-lg text-white">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1.5 max-w-2xl">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-bold bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                <Clock className="w-3.5 h-3.5" />
+                <span>Peringatan Harian: Setiap Hari Jam 8.15 Malam</span>
+              </span>
+
+              {permission === 'granted' ? (
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-300 bg-emerald-950/60 px-2 py-0.5 rounded-md border border-emerald-500/30">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                  <span>Notifikasi Aktif ({getNextScheduledText()})</span>
+                </span>
+              ) : (
+                <span className="text-[11px] text-amber-200/80 bg-amber-950/40 px-2 py-0.5 rounded-md border border-amber-500/30">
+                  Tekan untuk aktifkan notifikasi telefon jam 8.15 malam
+                </span>
+              )}
+            </div>
+
+            <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed pt-1">
+              Notifikasi peringatan surah semasa akan dihantar ke telefon setiap hari pada jam <strong>8.15 malam</strong>:
+            </p>
+
+            {/* Notification message quote preview */}
+            <div className="bg-black/30 border border-emerald-600/40 rounded-xl p-3 text-xs sm:text-sm font-medium text-amber-200 tracking-wide">
+              {notificationPreviewText}
+            </div>
+
+            {notifFeedback && (
+              <p className="text-xs font-semibold text-emerald-300 animate-pulse pt-1">
+                ✓ {notifFeedback}
+              </p>
+            )}
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <button
+              type="button"
+              onClick={handleToggleNotifications}
+              disabled={isSending}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-emerald-950 text-xs font-bold shadow-md transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+            >
+              <Bell className="w-4 h-4 fill-emerald-950" />
+              <span>{permission === 'granted' ? 'Uji Notifikasi Sekarang' : 'Aktifkan Notifikasi'}</span>
+            </button>
+
+            {onOpenInstallModal && (
+              <button
+                type="button"
+                onClick={onOpenInstallModal}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-900/80 hover:bg-emerald-800 text-white text-xs font-semibold border border-emerald-500/50 shadow-sm transition-all cursor-pointer"
+              >
+                <Smartphone className="w-4 h-4 text-amber-300" />
+                <span>Simpan ke Skrin Utama</span>
+              </button>
+            )}
           </div>
         </div>
       </section>

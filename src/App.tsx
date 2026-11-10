@@ -3,20 +3,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Navbar } from './components/Navbar';
 import { LoginSection } from './components/LoginSection';
 import { Dashboard } from './components/Dashboard';
 import { TeacherPortal } from './components/TeacherPortal';
 import { AppsScriptModal } from './components/AppsScriptModal';
 import { TeacherRecordModal } from './components/TeacherRecordModal';
+import { PWAInstallModal } from './components/PWAInstallModal';
 import { SemakKemajuanResult, StudentRecord } from './types/hafazan';
 import { fetchKemajuanMurid, getSavedAppsScriptUrl } from './services/appsScriptService';
 import { recordStudentLogin } from './services/studentStatsService';
 import { cleanIC } from './data/studentsData';
+import { scheduleDaily815PMReminder } from './services/notificationService';
 
 const TEACHER_IC = '971126';
-const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minit auto-logout
+const SAVED_STUDENT_IC_KEY = 'hafazan_saved_student_ic';
 
 export default function App() {
   const [activeStudent, setActiveStudent] = useState<SemakKemajuanResult | null>(null);
@@ -26,13 +28,14 @@ export default function App() {
 
   const [appsScriptUrl, setAppsScriptUrl] = useState<string>(() => getSavedAppsScriptUrl());
   const [isAppsScriptModalOpen, setIsAppsScriptModalOpen] = useState<boolean>(false);
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState<boolean>(false);
   const [studentToGrade, setStudentToGrade] = useState<SemakKemajuanResult | null>(null);
 
-  const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
-
   // Handle Search / Login
-  const handleSearch = async (rawIc: string) => {
+  const handleSearch = useCallback(async (rawIc: string, isAutoRestore: boolean = false) => {
     const ic = cleanIC(rawIc);
+    if (!ic) return;
+
     setIsLoading(true);
     setErrorMessage(null);
 
@@ -53,25 +56,62 @@ export default function App() {
         recordStudentLogin(ic);
         setActiveStudent(result);
         setIsTeacherMode(false);
+
+        // KEKAL LOG MASUK: Simpan nombor IC dalam storan peranti telefon
+        try {
+          localStorage.setItem(SAVED_STUDENT_IC_KEY, ic);
+        } catch {}
+
+        // Jadualkan peringatan harian jam 8.15 malam
+        scheduleDaily815PMReminder(result);
+
         window.scrollTo({ top: 0, behavior: 'smooth' });
       } else {
-        setErrorMessage(result.error || `No. IC ${ic} tidak dijumpai dalam rekod murid.`);
+        if (!isAutoRestore) {
+          setErrorMessage(result.error || `No. IC ${ic} tidak dijumpai dalam rekod murid.`);
+        } else {
+          try {
+            localStorage.removeItem(SAVED_STUDENT_IC_KEY);
+          } catch {}
+        }
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setErrorMessage(`Ralat: ${msg}`);
+      if (!isAutoRestore) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setErrorMessage(`Ralat: ${msg}`);
+      }
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  // Auto-restore student session from home screen / phone local storage on mount
+  useEffect(() => {
+    try {
+      const savedIc = localStorage.getItem(SAVED_STUDENT_IC_KEY);
+      if (savedIc) {
+        handleSearch(savedIc, true);
+      }
+    } catch (e) {
+      console.warn('Failed restoring saved student IC:', e);
+    }
+  }, [handleSearch]);
+
+  // Pantau jadual notifikasi jam 8.15 malam secara berterusan semasa sesi aktif
+  useEffect(() => {
+    if (!activeStudent) return;
+    const cleanup = scheduleDaily815PMReminder(activeStudent);
+    return cleanup;
+  }, [activeStudent]);
 
   const handleLogout = useCallback(() => {
+    // Pengguna memilih untuk Log Keluar secara manual
+    try {
+      localStorage.removeItem(SAVED_STUDENT_IC_KEY);
+    } catch {}
     setActiveStudent(null);
     setIsTeacherMode(false);
     setErrorMessage(null);
-    if (idleTimerRef.current) {
-      clearTimeout(idleTimerRef.current);
-    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
@@ -83,33 +123,6 @@ export default function App() {
     }
   };
 
-  // Reset idle timer whenever user interacts with page
-  const resetIdleTimer = useCallback(() => {
-    if (idleTimerRef.current) {
-      clearTimeout(idleTimerRef.current);
-    }
-    if (activeStudent) {
-      idleTimerRef.current = setTimeout(() => {
-        handleLogout();
-      }, IDLE_TIMEOUT_MS);
-    }
-  }, [activeStudent, handleLogout]);
-
-  useEffect(() => {
-    const events = ['click', 'keydown', 'touchstart', 'scroll'];
-    const listener = () => resetIdleTimer();
-
-    events.forEach((ev) => window.addEventListener(ev, listener, { passive: true }));
-    resetIdleTimer();
-
-    return () => {
-      events.forEach((ev) => window.removeEventListener(ev, listener));
-      if (idleTimerRef.current) {
-        clearTimeout(idleTimerRef.current);
-      }
-    };
-  }, [resetIdleTimer]);
-
   return (
     <div className="min-h-screen flex flex-col justify-between px-4 sm:px-6 lg:px-8 max-w-5xl mx-auto py-4">
       {/* Top Header / Navigation */}
@@ -118,7 +131,9 @@ export default function App() {
           isTeacherMode={isTeacherMode}
           hasActiveStudent={!!activeStudent}
           onLogout={handleLogout}
+          onOpenInstallModal={() => setIsInstallModalOpen(true)}
           onTeacherLogin={() => handleSearch(TEACHER_IC)}
+          onOpenAppsScript={() => setIsAppsScriptModalOpen(true)}
         />
 
         {/* Main Content Area */}
@@ -131,12 +146,16 @@ export default function App() {
               appsScriptConfigured={!!appsScriptUrl}
             />
           ) : activeStudent ? (
-            <Dashboard data={activeStudent} />
+            <Dashboard
+              data={activeStudent}
+              onOpenInstallModal={() => setIsInstallModalOpen(true)}
+            />
           ) : (
             <LoginSection
               onSearch={handleSearch}
               isLoading={isLoading}
               errorMessage={errorMessage}
+              onOpenInstallModal={() => setIsInstallModalOpen(true)}
             />
           )}
         </main>
@@ -152,11 +171,16 @@ export default function App() {
         </p>
       </footer>
 
-      {/* Modals for Teacher */}
+      {/* Modals */}
       <AppsScriptModal
         isOpen={isAppsScriptModalOpen}
         onClose={() => setIsAppsScriptModalOpen(false)}
         onUrlUpdated={(url) => setAppsScriptUrl(url)}
+      />
+
+      <PWAInstallModal
+        isOpen={isInstallModalOpen}
+        onClose={() => setIsInstallModalOpen(false)}
       />
 
       {studentToGrade && (

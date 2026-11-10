@@ -1,18 +1,22 @@
 import React, { useState } from 'react';
-import { Search, AlertCircle, ArrowRight, BookOpen } from 'lucide-react';
+import { Search, AlertCircle, ArrowRight, BookOpen, Smartphone, Link as LinkIcon } from 'lucide-react';
+import { AppsScriptModal } from './AppsScriptModal';
 
 interface LoginSectionProps {
   onSearch: (ic: string) => Promise<void>;
   isLoading: boolean;
   errorMessage: string | null;
+  onOpenInstallModal?: () => void;
 }
 
 export const LoginSection: React.FC<LoginSectionProps> = ({
   onSearch,
   isLoading,
   errorMessage,
+  onOpenInstallModal,
 }) => {
   const [icInput, setIcInput] = useState('');
+  const [isAppsScriptOpen, setIsAppsScriptOpen] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -96,7 +100,44 @@ export const LoginSection: React.FC<LoginSectionProps> = ({
             )}
           </button>
         </form>
+
+        {/* PWA & Home Screen Tip */}
+        <div className="mt-8 pt-6 border-t border-[var(--line)]/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-[var(--muted)]">
+          <div className="flex items-center gap-2 text-emerald-300">
+            <Smartphone className="w-4 h-4 text-amber-300 shrink-0" />
+            <span>Simpan ke Skrin Utama telefon untuk <strong>kekal log masuk</strong> & terima notifikasi surah setiap hari jam 8.15 malam.</span>
+          </div>
+
+          {onOpenInstallModal && (
+            <button
+              type="button"
+              onClick={onOpenInstallModal}
+              className="px-3 py-1.5 rounded-lg bg-emerald-950/60 hover:bg-emerald-900 border border-emerald-600/40 text-emerald-200 font-semibold text-xs whitespace-nowrap transition-colors self-start sm:self-auto cursor-pointer"
+            >
+              Pasang ke Telefon
+            </button>
+          )}
+        </div>
+
+        {/* Quick Apps Script URL button for instant sync setup */}
+        <div className="mt-4 pt-3 border-t border-[var(--line)]/30 flex items-center justify-between text-[11px] text-[var(--muted)]">
+          <span className="opacity-70">Sambungan Google Apps Script & Sheet</span>
+          <button
+            type="button"
+            onClick={() => setIsAppsScriptOpen(true)}
+            className="inline-flex items-center gap-1 text-[var(--gold)] hover:underline opacity-80 hover:opacity-100 cursor-pointer"
+          >
+            <LinkIcon className="w-3 h-3" />
+            <span>Konfigurasi URL Google Apps Script</span>
+          </button>
+        </div>
       </div>
+
+      <AppsScriptModal
+        isOpen={isAppsScriptOpen}
+        onClose={() => setIsAppsScriptOpen(false)}
+        onUrlUpdated={() => {}}
+      />
     </section>
   );
 };
