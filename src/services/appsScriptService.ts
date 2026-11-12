@@ -6,6 +6,20 @@ const APPS_SCRIPT_URL_KEY = 'hafazan_appscript_url';
 const LOCAL_MARKS_KEY = 'hafazan_local_student_marks';
 const SYNCED_STUDENTS_KEY = 'hafazan_synced_students';
 
+export interface SyncProgress {
+  phase: 'bulk' | 'roster' | 'individual';
+  completed: number;
+  total: number;
+  updated: number;
+}
+
+export interface SyncResult {
+  success: boolean;
+  message: string;
+  count?: number;
+  usedFallback?: boolean;
+}
+
 export function getSavedAppsScriptUrl(): string {
   try {
     const envUrl = import.meta.env.VITE_APPS_SCRIPT_URL;
@@ -74,186 +88,269 @@ export function saveLocalStudentMark(ic: string, surahIdx: number, mark: number)
   }
 }
 
-export async function testAppsScriptConnection(url: string): Promise<{ success: boolean; message: string }> {
-  if (!url || !url.startsWith('http')) {
-    return { success: false, message: 'URL mestilah bermula dengan http:// atau https://' };
-  }
-
-  try {
-    const testUrl = `${url}${url.includes('?') ? '&' : '?'}action=semakKemajuan&ic=${INITIAL_STUDENTS[0].ic}`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 9000);
-
-    const response = await fetch(testUrl, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-      },
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      return { success: false, message: `Pelayan membalas status HTTP ${response.status}` };
-    }
-
-    const data = await response.json();
-    if (data && (data.ok !== undefined || data.name !== undefined || data.error !== undefined)) {
-      return { success: true, message: 'Sambungan ke Google Apps Script berjaya!' };
-    }
-
-    return { success: true, message: 'Respons diterima daripada Apps Script!' };
-  } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
-    return { success: false, message: `Gagal berhubung: ${errorMsg}. Pastikan Apps Script telah di-deploy dengan akses 'Anyone'.` };
-  }
+function buildAppsScriptUrl(baseUrl: string, params: Record<string, string>): string {
+  const sep = baseUrl.includes('?') ? '&' : '?';
+  const qs = Object.entries({ ...params, _t: String(Date.now()) })
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join('&');
+  return `${baseUrl}${sep}${qs}`;
 }
 
-export async function syncAllStudentsFromGoogleSheet(): Promise<{
-  success: boolean;
-  message: string;
-  count?: number;
-}> {
-  const url = getSavedAppsScriptUrl();
-  if (!url || !url.startsWith('http')) {
-    return {
-      success: false,
-      message: 'Sila masukkan URL Google Apps Script terlebih dahulu.',
-    };
-  }
-
+async function fetchJsonWithTimeout(url: string, timeoutMs: number): Promise<any> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const fetchUrl = `${url}${url.includes('?') ? '&' : '?'}action=segerakSemua`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-
-    const response = await fetch(fetchUrl, {
+    const response = await fetch(url, {
       method: 'GET',
+      cache: 'no-store',
       headers: {
         Accept: 'application/json',
       },
       signal: controller.signal,
     });
-    clearTimeout(timeout);
-
     if (!response.ok) {
-      return {
-        success: false,
-        message: `Pelayan Google membalas status HTTP ${response.status}`,
-      };
+      throw new Error(`Pelayan Google membalas status HTTP ${response.status}`);
+    }
+    return await response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function persistBulkStudents(
+  studentsPayload: Array<{
+    bil?: number | string;
+    name?: string;
+    klass?: string;
+    ic: string;
+    marks?: Record<string | number, number>;
+  }>
+): number {
+  const newMarksMap: Record<string, Record<number, number>> = {};
+  const syncedRoster: StudentRecord[] = [];
+
+  studentsPayload.forEach((st, idx) => {
+    const clean = cleanIC(st.ic);
+    if (!clean) return;
+
+    if (st.marks && typeof st.marks === 'object') {
+      const normalizedMarks: Record<number, number> = {};
+      Object.entries(st.marks).forEach(([k, v]) => {
+        const sIdx = Number(k);
+        const val = Number(v);
+        if (!Number.isNaN(sIdx) && !Number.isNaN(val) && val > 0) {
+          normalizedMarks[sIdx] = val;
+        }
+      });
+      newMarksMap[clean] = normalizedMarks;
     }
 
-    const data = await response.json();
-    if (!data.ok || !Array.isArray(data.students)) {
-      // Jika Apps Script pengguna belum menyokong 'segerakSemua' (menghasilkan 'Tindakan tidak sah'),
-      // laksanakan fallback pintar secara automatik tanpa memaparkan ralat kepada guru
-      const errStr = String(data.error || '');
-      if (errStr.includes('Tindakan') || errStr.includes('action') || errStr.includes('tidak sah')) {
-        return await syncViaIndividualStudentQueries(url);
-      }
-      return {
-        success: false,
-        message: data.error || 'Format data Google Sheet tidak sah.',
-      };
+    if (st.name) {
+      syncedRoster.push({
+        bil: Number(st.bil) || idx + 1,
+        name: String(st.name).trim(),
+        klass: String(st.klass || '').trim(),
+        ic: clean,
+      });
     }
+  });
 
-    // Save all marks and student roster into local storage
-    const newMarksMap: Record<string, Record<number, number>> = {};
-    const syncedRoster: StudentRecord[] = [];
+  localStorage.setItem(LOCAL_MARKS_KEY, JSON.stringify(newMarksMap));
+  if (syncedRoster.length > 0) {
+    localStorage.setItem(SYNCED_STUDENTS_KEY, JSON.stringify(syncedRoster));
+  }
+  return syncedRoster.length || Object.keys(newMarksMap).length;
+}
 
-    data.students.forEach((st: { bil?: number; name?: string; klass?: string; ic: string; marks?: Record<number, number> }, idx: number) => {
-      const clean = cleanIC(st.ic);
-      if (clean) {
-        if (st.marks) {
-          newMarksMap[clean] = st.marks;
-        }
-        if (st.name) {
-          syncedRoster.push({
-            bil: Number(st.bil) || (idx + 1),
-            name: String(st.name).trim(),
-            klass: String(st.klass || '').trim(),
-            ic: clean,
-          });
-        }
-      }
+export async function testAppsScriptConnection(url: string): Promise<{ success: boolean; message: string }> {
+  const trimmed = url.trim();
+  if (!trimmed || !trimmed.startsWith('http')) {
+    return { success: false, message: 'URL mestilah bermula dengan http:// atau https://' };
+  }
+
+  try {
+    const testUrl = buildAppsScriptUrl(trimmed, {
+      action: 'semakKemajuan',
+      ic: INITIAL_STUDENTS[0].ic,
     });
-
-    localStorage.setItem(LOCAL_MARKS_KEY, JSON.stringify(newMarksMap));
-    if (syncedRoster.length > 0) {
-      localStorage.setItem(SYNCED_STUDENTS_KEY, JSON.stringify(syncedRoster));
+    const data = await fetchJsonWithTimeout(testUrl, 12000);
+    if (data && (data.ok !== undefined || data.name !== undefined || data.error !== undefined)) {
+      return { success: true, message: 'Sambungan ke Google Apps Script berjaya!' };
     }
-
-    return {
-      success: true,
-      message: `Berjaya menyegerakkan data ${data.students.length} murid secara langsung dari Google Sheet!`,
-      count: data.students.length,
-    };
+    return { success: true, message: 'Respons diterima daripada Apps Script!' };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     return {
       success: false,
-      message: `Gagal menyegerakkan data: ${errorMsg}. Pastikan Apps Script aktif dengan akses 'Anyone'.`,
+      message: `Gagal berhubung: ${errorMsg}. Pastikan Apps Script telah di-deploy dengan akses 'Anyone'.`,
     };
   }
 }
 
-/**
- * Fallback pintar: Jika Apps Script versi lama sedang digunakan di Google Sheet,
- * fungsi ini akan menyemak data setiap murid secara selari (parallel chunk)
- * tanpa memerlukan guru mengemas kini skrip Google terlebih dahulu.
- */
-async function syncViaIndividualStudentQueries(url: string): Promise<{
-  success: boolean;
-  message: string;
-  count?: number;
-}> {
+export async function syncAllStudentsFromGoogleSheet(
+  onProgress?: (progress: SyncProgress) => void
+): Promise<SyncResult> {
+  const url = getSavedAppsScriptUrl();
+  if (!url || !url.startsWith('http')) {
+    return {
+      success: false,
+      message: 'URL Google Apps Script belum ditetapkan. Klik "Sambung Google Sheet" untuk menetapkan URL.',
+    };
+  }
+
+  // 1. Cuba tarik semua murid & markah sekaligus (action=segerakSemua)
   try {
-    const students = getSyncedStudents();
+    onProgress?.({ phase: 'bulk', completed: 0, total: 1, updated: 0 });
+    const fetchUrl = buildAppsScriptUrl(url, { action: 'segerakSemua' });
+    const data = await fetchJsonWithTimeout(fetchUrl, 20000);
+
+    if (data && data.ok && Array.isArray(data.students) && data.students.length > 0) {
+      const hasMarksData = data.students.some(
+        (s: { marks?: unknown }) => s && s.marks && typeof s.marks === 'object'
+      );
+      if (hasMarksData) {
+        const count = persistBulkStudents(data.students);
+        return {
+          success: true,
+          message: `Berjaya menyegerakkan data ${count} murid secara langsung dari Google Sheet!`,
+          count,
+          usedFallback: false,
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('segerakSemua tidak disokong atau gagal, mencuba senaraiMurid / semakKemajuan:', err);
+  }
+
+  // 2. Cuba semak jika action=senaraiMurid memulangkan senarai terkini (atau markah penuh)
+  let rosterToSync = getSyncedStudents();
+  try {
+    onProgress?.({ phase: 'roster', completed: 0, total: 1, updated: 0 });
+    const rosterUrl = buildAppsScriptUrl(url, { action: 'senaraiMurid' });
+    const rosterData = await fetchJsonWithTimeout(rosterUrl, 15000);
+    if (rosterData && rosterData.ok && Array.isArray(rosterData.students) && rosterData.students.length > 0) {
+      const hasMarksData = rosterData.students.some(
+        (s: { marks?: unknown }) => s && s.marks && typeof s.marks === 'object'
+      );
+      if (hasMarksData) {
+        const count = persistBulkStudents(rosterData.students);
+        return {
+          success: true,
+          message: `Berjaya menyegerakkan data ${count} murid secara langsung dari Google Sheet!`,
+          count,
+          usedFallback: false,
+        };
+      }
+
+      // Simpan senarai nama/kelas/IC terkini dari Google Sheet
+      const updatedRoster: StudentRecord[] = rosterData.students
+        .filter((s: { name?: string; ic?: string }) => s && s.name && s.ic)
+        .map((s: { bil?: number | string; name: string; klass?: string; ic: string }, idx: number) => ({
+          bil: Number(s.bil) || idx + 1,
+          name: String(s.name).trim(),
+          klass: String(s.klass || '').trim(),
+          ic: cleanIC(s.ic),
+        }));
+
+      if (updatedRoster.length > 0) {
+        rosterToSync = updatedRoster;
+        localStorage.setItem(SYNCED_STUDENTS_KEY, JSON.stringify(updatedRoster));
+      }
+    }
+  } catch (err) {
+    console.warn('senaraiMurid tidak tersedia, menggunakan senarai murid sedia ada:', err);
+  }
+
+  // 3. Fallback pintar & boleh dipercayai: tarik markah setiap murid menggunakan ?action=semakKemajuan&ic=...
+  //    dalam kumpulan kecil (4 serentak) dengan tempoh tamat 18s & cubaan semula automatik supaya Google Sheet tidak terbeban.
+  return await syncViaIndividualStudentQueries(url, rosterToSync, onProgress);
+}
+
+async function fetchSingleStudentWithRetry(
+  url: string,
+  ic: string
+): Promise<Record<number, number> | null> {
+  const fetchUrl = buildAppsScriptUrl(url, { action: 'semakKemajuan', ic });
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const json = await fetchJsonWithTimeout(fetchUrl, 18000);
+      if (json && json.ok && Array.isArray(json.surahs)) {
+        const studentMarks: Record<number, number> = {};
+        json.surahs.forEach((s: { got?: number | null }, idx: number) => {
+          if (s.got !== null && s.got !== undefined && Number(s.got) > 0) {
+            studentMarks[idx] = Number(s.got);
+          }
+        });
+        return studentMarks;
+      }
+      // Jika murid tiada dalam sheet (ok: false), jangan cuba semula
+      if (json && json.ok === false) {
+        return null;
+      }
+    } catch {
+      if (attempt === 0) {
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    }
+  }
+  return null;
+}
+
+async function syncViaIndividualStudentQueries(
+  url: string,
+  students: StudentRecord[],
+  onProgress?: (progress: SyncProgress) => void
+): Promise<SyncResult> {
+  try {
     const newMarksMap: Record<string, Record<number, number>> = getLocalMarks();
     let updatedCount = 0;
+    let completedCount = 0;
+    const total = students.length;
 
-    // Lakukan semakan secara berkelompok (10 murid serentak) untuk kepantasan maksimum
-    const chunkSize = 10;
+    onProgress?.({ phase: 'individual', completed: 0, total, updated: 0 });
+
+    // Konkurensi 4 serentak sesuai dengan had Google Apps Script supaya stabil dan tidak timeout
+    const chunkSize = 4;
     for (let i = 0; i < students.length; i += chunkSize) {
       const chunk = students.slice(i, i + chunkSize);
       await Promise.all(
         chunk.map(async (student) => {
-          try {
-            const clean = cleanIC(student.ic);
-            const fetchUrl = `${url}${url.includes('?') ? '&' : '?'}action=semakKemajuan&ic=${encodeURIComponent(clean)}`;
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 7000);
-            const res = await fetch(fetchUrl, {
-              method: 'GET',
-              headers: { Accept: 'application/json' },
-              signal: controller.signal,
-            });
-            clearTimeout(timeout);
-            if (res.ok) {
-              const json = await res.json();
-              if (json && json.ok && Array.isArray(json.surahs)) {
-                const studentMarks: Record<number, number> = {};
-                json.surahs.forEach((s: { got?: number | null }, idx: number) => {
-                  if (s.got !== null && s.got !== undefined && s.got > 0) {
-                    studentMarks[idx] = s.got;
-                  }
-                });
-                newMarksMap[clean] = studentMarks;
-                updatedCount++;
-              }
-            }
-          } catch {
-            // Ignore individual timeout and proceed
+          const clean = cleanIC(student.ic);
+          const marks = await fetchSingleStudentWithRetry(url, clean);
+          completedCount++;
+          if (marks !== null) {
+            newMarksMap[clean] = marks;
+            updatedCount++;
           }
         })
       );
+
+      // Simpan dan kemas kini paparan guru secara langsung selepas setiap kumpulan
+      localStorage.setItem(LOCAL_MARKS_KEY, JSON.stringify(newMarksMap));
+      onProgress?.({
+        phase: 'individual',
+        completed: completedCount,
+        total,
+        updated: updatedCount,
+      });
     }
 
-    localStorage.setItem(LOCAL_MARKS_KEY, JSON.stringify(newMarksMap));
+    if (updatedCount === 0) {
+      return {
+        success: false,
+        message:
+          'Gagal menarik rekod murid daripada Google Apps Script. Sila semak URL Apps Script atau pastikan akses ditetapkan kepada "Anyone".',
+        count: 0,
+        usedFallback: true,
+      };
+    }
+
     return {
       success: true,
-      message: `Berjaya menyegerakkan data ${updatedCount > 0 ? updatedCount : students.length} murid terus dari Google Sheet!`,
+      message: `Berjaya menyegerakkan data ${updatedCount} daripada ${total} murid terus dari Google Sheet!`,
       count: updatedCount,
+      usedFallback: true,
     };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -298,41 +395,43 @@ export async function fetchKemajuanMurid(ic: string): Promise<SemakKemajuanResul
   // Try Apps Script if configured
   if (appScriptUrl) {
     try {
-      const fetchUrl = `${appScriptUrl}${appScriptUrl.includes('?') ? '&' : '?'}action=semakKemajuan&ic=${encodeURIComponent(targetIc)}`;
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-
-      const res = await fetch(fetchUrl, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-        },
-        signal: controller.signal,
+      const fetchUrl = buildAppsScriptUrl(appScriptUrl, {
+        action: 'semakKemajuan',
+        ic: targetIc,
       });
-      clearTimeout(timeout);
+      const json = await fetchJsonWithTimeout(fetchUrl, 12000);
+      if (json && json.ok && json.surahs) {
+        // Cache markah terkini murid ke storan tempatan
+        const currentMarks = getLocalMarks();
+        const studentMarks: Record<number, number> = {};
+        json.surahs.forEach((s: { got?: number | null }, idx: number) => {
+          if (s.got !== null && s.got !== undefined && Number(s.got) > 0) {
+            studentMarks[idx] = Number(s.got);
+          }
+        });
+        currentMarks[targetIc] = studentMarks;
+        try {
+          localStorage.setItem(LOCAL_MARKS_KEY, JSON.stringify(currentMarks));
+        } catch {}
 
-      if (res.ok) {
-        const json = await res.json();
-        if (json && json.ok && json.surahs) {
-          return {
-            ok: true,
-            name: json.name || 'Murid',
-            klass: json.klass || '',
-            ic: targetIc,
-            surahs: json.surahs,
-            source: 'appscript',
-          };
-        } else if (json && json.error) {
-          return {
-            ok: false,
-            name: '',
-            klass: '',
-            ic: targetIc,
-            surahs: [],
-            error: json.error,
-            source: 'appscript',
-          };
-        }
+        return {
+          ok: true,
+          name: json.name || 'Murid',
+          klass: json.klass || '',
+          ic: targetIc,
+          surahs: json.surahs,
+          source: 'appscript',
+        };
+      } else if (json && json.error) {
+        return {
+          ok: false,
+          name: '',
+          klass: '',
+          ic: targetIc,
+          surahs: [],
+          error: json.error,
+          source: 'appscript',
+        };
       }
     } catch (e) {
       console.warn('Apps Script fetch failed, falling back to local dataset:', e);
@@ -381,27 +480,28 @@ export async function fetchKemajuanMurid(ic: string): Promise<SemakKemajuanResul
 
 export function generateUpdatedCSV(): string {
   const marks = getLocalMarks();
+  const students = getSyncedStudents();
   const lines: string[] = [];
 
   // Line 1: Header
   lines.push(',,,,,,,,,,,,,,,,,,,REKOD HAFAZAN TAHUN 6 2027,,,,,,,,,,,,,,,,,,,,,,,,,,');
-  
+
   // Line 2: Surah Names
-  const surahNames = SURAH_LIST.map(s => s.n).join(',');
+  const surahNames = SURAH_LIST.map((s) => s.n).join(',');
   lines.push(`NAMA SURAH,,,,${surahNames},JUMLAH`);
 
   // Line 3: Max marks
-  const maxMarks = SURAH_LIST.map(s => s.max).join(',');
+  const maxMarks = SURAH_LIST.map((s) => s.max).join(',');
   lines.push(`MARKAH PER SURAH,,,,${maxMarks},100`);
 
   // Line 4: Columns
   lines.push('BIL,NAMA MURID,KELAS,NO IC,REKOD MARKAH MURID,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,');
 
   // Line 5+: Students
-  INITIAL_STUDENTS.forEach(student => {
+  students.forEach((student) => {
     const studentIc = cleanIC(student.ic);
     const m = marks[studentIc] || {};
-    const surahValues = SURAH_LIST.map((s, idx) => (m[idx] !== undefined ? m[idx] : ''));
+    const surahValues = SURAH_LIST.map((_, idx) => (m[idx] !== undefined ? m[idx] : ''));
     const total = SURAH_LIST.reduce((sum, _, idx) => sum + (m[idx] || 0), 0);
     lines.push(`${student.bil},"${student.name}",${student.klass},${student.ic},${surahValues.join(',')},${total}`);
   });

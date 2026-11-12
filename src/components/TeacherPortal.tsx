@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Users,
   BarChart3,
@@ -16,12 +16,16 @@ import {
   detectGender,
 } from '../services/studentStatsService';
 import { SURAH_LIST, YEAR_COLORS } from '../data/surahData';
+import { cleanIC } from '../data/studentsData';
 import {
   getLocalMarks,
   getSyncedStudents,
+  getSavedAppsScriptUrl,
   generateUpdatedCSV,
   clearAllLocalMarks,
   syncAllStudentsFromGoogleSheet,
+  SyncProgress,
+  SyncResult,
 } from '../services/appsScriptService';
 import { StudentRecord } from '../types/hafazan';
 
@@ -32,7 +36,6 @@ interface TeacherPortalProps {
 }
 
 export const TeacherPortal: React.FC<TeacherPortalProps> = ({
-  onLogout,
   onOpenAppsScript,
   appsScriptConfigured,
 }) => {
@@ -40,55 +43,127 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
   const [surahYearFilter, setSurahYearFilter] = useState<number | 'all'>('all');
   const [studentSearch, setStudentSearch] = useState('');
   const [studentClassFilter, setStudentClassFilter] = useState<string>('all');
-  const [, setRefreshKey] = useState<number>(0);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
-  const [syncFeedback, setSyncFeedback] = useState<{ success: boolean; message: string } | null>(null);
+  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
+  const [syncFeedback, setSyncFeedback] = useState<SyncResult | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
 
   const [marksMap, setMarksMap] = useState<Record<string, Record<number, number>>>(() => getLocalMarks());
   const [studentsList, setStudentsList] = useState<StudentRecord[]>(() => getSyncedStudents());
+  const isSyncingRef = useRef<boolean>(false);
 
-  // Auto-sync in background on mount if Apps Script is configured
-  useEffect(() => {
-    if (appsScriptConfigured) {
-      syncAllStudentsFromGoogleSheet().then((res) => {
-        if (res.success) {
-          setMarksMap(getLocalMarks());
-          setStudentsList(getSyncedStudents());
-          setRefreshKey((prev) => prev + 1);
-        }
+  const handleSyncGoogleSheet = useCallback(async () => {
+    if (isSyncingRef.current) return;
+
+    const currentUrl = getSavedAppsScriptUrl();
+    if (!currentUrl) {
+      setSyncFeedback({
+        success: false,
+        message: 'Sambungan Google Sheet belum dikonfigurasi. Sila klik "Sambung Google Sheet" untuk memasukkan URL Apps Script anda.',
       });
+      return;
     }
-  }, [appsScriptConfigured]);
 
-  const handleSyncGoogleSheet = async () => {
+    isSyncingRef.current = true;
     setIsSyncing(true);
     setSyncFeedback(null);
-    const result = await syncAllStudentsFromGoogleSheet();
+    setSyncProgress({ phase: 'bulk', completed: 0, total: 1, updated: 0 });
+
+    const result = await syncAllStudentsFromGoogleSheet((progress) => {
+      setSyncProgress(progress);
+      setMarksMap(getLocalMarks());
+      setStudentsList(getSyncedStudents());
+    });
+
+    isSyncingRef.current = false;
     setIsSyncing(false);
+    setSyncProgress(null);
     setSyncFeedback(result);
+
     if (result.success) {
       setMarksMap(getLocalMarks());
       setStudentsList(getSyncedStudents());
-      setRefreshKey((prev) => prev + 1);
-      setTimeout(() => setSyncFeedback(null), 6000);
+      setLastSyncedAt(
+        new Date().toLocaleTimeString('ms-MY', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        })
+      );
+      setTimeout(() => setSyncFeedback(null), 8000);
     }
-  };
+  }, []);
 
-  const analytics = calculateComprehensiveAnalytics();
+  // Auto-sync secara automatik dengan paparan status langsung apabila paparan guru dibuka
+  useEffect(() => {
+    handleSyncGoogleSheet();
+  }, [appsScriptConfigured, handleSyncGoogleSheet]);
+
+  const analytics = calculateComprehensiveAnalytics(studentsList, marksMap);
 
   // Filtered surah list for mastery inspection
   const filteredSurahs = analytics.surahStats.filter(
     (s) => surahYearFilter === 'all' || s.year === surahYearFilter
   );
 
-  // Filtered 68 students from synced Google Sheet roster
-  const filteredStudents = studentsList.filter((s) => {
-    const matchSearch =
-      s.name.toLowerCase().includes(studentSearch.toLowerCase()) ||
-      s.ic.toLowerCase().includes(studentSearch.toLowerCase());
-    const matchClass =
-      studentClassFilter === 'all' || s.klass.toLowerCase().includes(studentClassFilter.toLowerCase());
-    return matchSearch && matchClass;
+  // Dynamic classes list from roster
+  const availableClasses = Array.from(
+    new Set(studentsList.map((s) => String(s.klass || '').trim()).filter(Boolean))
+  );
+
+  // Enrich, sort by highest surah memorized (Rank Murid), and filter students
+  const rankedClassStudents = studentsList
+    .filter(
+      (s) =>
+        studentClassFilter === 'all' ||
+        s.klass.toLowerCase().trim() === studentClassFilter.toLowerCase().trim()
+    )
+    .map((s) => {
+      const m = marksMap[cleanIC(s.ic)] || {};
+      let highestSurahIdx = -1;
+      let totalMarks = 0;
+      let completedSurahsCount = 0;
+
+      SURAH_LIST.forEach((_, idx) => {
+        const val = m[idx] || 0;
+        if (val > 0) {
+          totalMarks += val;
+          completedSurahsCount++;
+          highestSurahIdx = idx;
+        }
+      });
+
+      return {
+        student: s,
+        totalMarks,
+        completedSurahsCount,
+        highestSurahIdx,
+        highestSurah: highestSurahIdx >= 0 ? SURAH_LIST[highestSurahIdx] : null,
+        gender: detectGender(s.name),
+      };
+    })
+    .sort((a, b) => {
+      if (b.highestSurahIdx !== a.highestSurahIdx) {
+        return b.highestSurahIdx - a.highestSurahIdx;
+      }
+      if (b.completedSurahsCount !== a.completedSurahsCount) {
+        return b.completedSurahsCount - a.completedSurahsCount;
+      }
+      if (b.totalMarks !== a.totalMarks) {
+        return b.totalMarks - a.totalMarks;
+      }
+      return a.student.name.localeCompare(b.student.name);
+    })
+    .map((item, idx) => ({
+      ...item,
+      rank: idx + 1,
+    }));
+
+  const filteredStudents = rankedClassStudents.filter(({ student }) => {
+    return (
+      student.name.toLowerCase().includes(studentSearch.toLowerCase()) ||
+      student.ic.toLowerCase().includes(studentSearch.toLowerCase())
+    );
   });
 
   const handleExportCSV = () => {
@@ -107,8 +182,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
     clearAllLocalMarks();
     setMarksMap({});
     setStudentsList(getSyncedStudents());
-    setRefreshKey((prev) => prev + 1);
-    setSyncFeedback({ success: true, message: 'Data tempatan diset semula. Sila tekan Segerak untuk memuat data Google Sheet.' });
+    setSyncFeedback({ success: true, message: 'Data tempatan diset semula. Tekan Segerak Dari Google Sheet untuk memuat semula.' });
     setTimeout(() => setSyncFeedback(null), 4000);
   };
 
@@ -177,23 +251,67 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
           </div>
         </div>
 
+        {/* Live Sync Progress Banner */}
+        {isSyncing && (
+          <div className="mt-4 p-3.5 rounded-xl bg-[var(--gold)]/10 border border-[var(--gold)]/40 text-xs text-[var(--ink)] space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 font-semibold text-[var(--gold)]">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+                <span>
+                  {syncProgress?.phase === 'individual'
+                    ? `Menarik rekod murid dari Google Sheet... (${syncProgress.completed} / ${syncProgress.total} murid)`
+                    : syncProgress?.phase === 'roster'
+                    ? 'Menyemak senarai murid terkini daripada Google Sheet...'
+                    : 'Menyegerakkan data Google Sheet secara langsung...'}
+                </span>
+              </div>
+              {syncProgress?.phase === 'individual' && syncProgress.total > 0 && (
+                <span className="font-mono font-bold text-[var(--gold)]">
+                  {Math.round((syncProgress.completed / syncProgress.total) * 100)}%
+                </span>
+              )}
+            </div>
+            {syncProgress?.phase === 'individual' && syncProgress.total > 0 && (
+              <div className="w-full h-1.5 rounded-full bg-[var(--night)] overflow-hidden border border-[var(--line)]">
+                <div
+                  className="h-full bg-[var(--gold)] rounded-full transition-all duration-300"
+                  style={{ width: `${Math.round((syncProgress.completed / syncProgress.total) * 100)}%` }}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Sync Feedback Toast Banner */}
-        {syncFeedback && (
+        {syncFeedback && !isSyncing && (
           <div
-            className={`mt-4 p-3 rounded-xl text-xs font-semibold flex items-center justify-between border ${
+            className={`mt-4 p-3 rounded-xl text-xs font-semibold flex flex-col sm:flex-row sm:items-center justify-between gap-2 border ${
               syncFeedback.success
                 ? 'bg-[var(--mint)]/15 border-[var(--mint)] text-[var(--mint)]'
                 : 'bg-[var(--rose)]/15 border-[var(--rose)] text-[var(--rose)]'
             }`}
           >
-            <span>{syncFeedback.message}</span>
+            <div>
+              <span>{syncFeedback.message}</span>
+              {syncFeedback.success && syncFeedback.usedFallback && (
+                <span className="block text-[11px] font-normal opacity-90 mt-0.5">
+                  Tip: Kemas kini kod dalam menu &quot;Apps Script Bersambung&quot; untuk kelajuan segerakan 1 saat pada masa hadapan.
+                </span>
+              )}
+            </div>
             <button
               type="button"
               onClick={() => setSyncFeedback(null)}
-              className="text-[10px] underline ml-2 cursor-pointer"
+              className="text-[10px] underline shrink-0 self-end sm:self-center cursor-pointer"
             >
               Tutup
             </button>
+          </div>
+        )}
+
+        {lastSyncedAt && !isSyncing && !syncFeedback && (
+          <div className="mt-3 text-[11px] text-[var(--muted)] font-mono">
+            Disegerakkan dari Google Sheet pada {lastSyncedAt}
           </div>
         )}
 
@@ -222,7 +340,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
             }`}
           >
             <Users className="w-4 h-4" />
-            <span>Senarai Rekod 68 Murid (Google Sheet)</span>
+            <span>Senarai Rekod {studentsList.length} Murid (Google Sheet)</span>
           </button>
         </div>
       </section>
@@ -551,10 +669,10 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-[var(--line)]">
             <div>
               <h3 className="font-display text-lg sm:text-xl text-[var(--ink)]">
-                Senarai Rekod 68 Murid (Google Sheet)
+                Ranking &amp; Rekod {studentsList.length} Murid (Surah Tertinggi)
               </h3>
               <p className="text-xs text-[var(--muted)]">
-                Markah murid dikemas kini oleh guru di dalam Google Sheet. Tekan butang &quot;Segerak Dari Google Sheet&quot; untuk memuatkan data terkini.
+                Disusun mengikut kedudukan murid dari surah hafazan tertinggi ke terendah berdasarkan data langsung Google Sheet.
               </p>
             </div>
 
@@ -581,8 +699,8 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
               />
             </div>
 
-            <div className="flex items-center gap-1.5 shrink-0">
-              {['all', '5 Al-Lail', '5 As-Syam'].map((cls) => (
+            <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+              {['all', ...availableClasses].map((cls) => (
                 <button
                   key={cls}
                   type="button"
@@ -605,25 +723,39 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
               <table className="w-full text-left text-xs">
                 <thead className="bg-[var(--panel-2)] text-[var(--muted)] font-display uppercase tracking-wider text-[11px] border-b border-[var(--line)]">
                   <tr>
-                    <th className="py-3 px-3 w-12 text-center">BIL</th>
+                    <th className="py-3 px-3 w-16 text-center">RANK</th>
                     <th className="py-3 px-4">NAMA MURID</th>
                     <th className="py-3 px-3">KELAS</th>
                     <th className="py-3 px-3">NO. IC</th>
                     <th className="py-3 px-3">JANTINA</th>
-                    <th className="py-3 px-3 text-center">MARKAH (SHEET)</th>
+                    <th className="py-3 px-3">SURAH TERTINGGI</th>
+                    <th className="py-3 px-3 text-center">MARKAH</th>
                     <th className="py-3 px-4 text-right">STATUS SURAH</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--line)]/50 font-mono">
-                  {filteredStudents.map((s) => {
-                    const m = marksMap[s.ic] || {};
-                    const totalMarks = SURAH_LIST.reduce((sum, _, idx) => sum + (m[idx] || 0), 0);
-                    const completedSurahsCount = SURAH_LIST.filter((_, idx) => m[idx] && m[idx] > 0).length;
-                    const gender = detectGender(s.name);
+                  {filteredStudents.map(({ student: s, rank, totalMarks, completedSurahsCount, highestSurah, gender }) => {
+                    const hasProgress = completedSurahsCount > 0;
+                    let rankBadgeClass = 'bg-[var(--panel-2)] text-[var(--muted)] border border-[var(--line)]';
+                    if (hasProgress && rank === 1) {
+                      rankBadgeClass = 'bg-[var(--gold)] text-[#241800] ring-2 ring-[var(--gold)]/60 shadow-sm';
+                    } else if (hasProgress && rank === 2) {
+                      rankBadgeClass = 'bg-slate-300 text-slate-900';
+                    } else if (hasProgress && rank === 3) {
+                      rankBadgeClass = 'bg-amber-600 text-white';
+                    }
+
+                    const surahYearColor = highestSurah ? YEAR_COLORS[highestSurah.y - 1] : undefined;
 
                     return (
                       <tr key={s.ic} className="hover:bg-[var(--panel-2)]/40 transition-colors">
-                        <td className="py-3 px-3 text-center text-[var(--muted)]">{s.bil}</td>
+                        <td className="py-3 px-3 text-center">
+                          <span
+                            className={`inline-flex items-center justify-center min-w-[2rem] h-7 px-1.5 rounded-full text-xs font-display font-extrabold ${rankBadgeClass}`}
+                          >
+                            #{rank}
+                          </span>
+                        </td>
                         <td className="py-3 px-4 font-sans font-bold text-[var(--ink)]">
                           {s.name}
                         </td>
@@ -639,6 +771,23 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
                           >
                             {gender}
                           </span>
+                        </td>
+                        <td className="py-3 px-3 font-sans">
+                          {highestSurah ? (
+                            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--panel-2)] border border-[var(--line)]">
+                              <span
+                                className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-[var(--night)]"
+                                style={{ color: surahYearColor }}
+                              >
+                                T{highestSurah.y}
+                              </span>
+                              <span className="text-xs font-bold text-[var(--ink)]">
+                                {highestSurah.n}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-[var(--muted)] italic">Belum Mula</span>
+                          )}
                         </td>
                         <td className="py-3 px-3 text-center">
                           <b className="text-[var(--mint)] font-display text-sm">{totalMarks}</b>

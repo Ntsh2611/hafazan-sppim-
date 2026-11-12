@@ -81,28 +81,23 @@ function doGet(e) {
   var action = (e && e.parameter && e.parameter.action) || 'semakKemajuan';
   var ic = (e && e.parameter && e.parameter.ic) ? e.parameter.ic : '';
   
-  if (action === 'segerakSemua' || action === 'senaraiSemuaData') {
-    var semuaData = dapatkanSemuaDataMurid();
-    return outputJson(semuaData);
+  if (action === 'segerakSemua' || action === 'senaraiSemuaData' || action === 'segerak') {
+    return outputJson(dapatkanSemuaDataMurid());
   }
 
   if (action === 'senaraiMurid') {
-    var muridList = dapatkanSenaraiMurid();
-    return outputJson(muridList);
+    return outputJson(dapatkanSemuaDataMurid());
   }
   
   if (action === 'semakKemajuan' || !action) {
     if (!ic) {
-      return outputJson({
-        ok: false,
-        error: 'Sila masukkan parameter nombor IC. Contoh: ?action=semakKemajuan&ic=150424040238'
-      });
+      return outputJson(dapatkanSemuaDataMurid());
     }
     var hasil = semakKemajuan(ic);
     return outputJson(hasil);
   }
   
-  return outputJson({ ok: false, error: 'Tindakan (action) tidak dikenali.' });
+  return outputJson(dapatkanSemuaDataMurid());
 }
 
 function doPost(e) {
