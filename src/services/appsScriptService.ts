@@ -4,6 +4,7 @@ import { cleanIC, findLocalStudent, INITIAL_STUDENTS } from '../data/studentsDat
 
 const APPS_SCRIPT_URL_KEY = 'hafazan_appscript_url';
 const LOCAL_MARKS_KEY = 'hafazan_local_student_marks';
+const SYNCED_STUDENTS_KEY = 'hafazan_synced_students';
 
 export function getSavedAppsScriptUrl(): string {
   try {
@@ -25,6 +26,20 @@ export function saveAppsScriptUrl(url: string): void {
   }
 }
 
+// Senarai murid yang disegerak dari Google Sheet (atau senarai lalai jika belum disegerak)
+export function getSyncedStudents(): StudentRecord[] {
+  try {
+    const raw = localStorage.getItem(SYNCED_STUDENTS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch {}
+  return INITIAL_STUDENTS;
+}
+
 // Stored local progress/marks per IC (follows authentic Google Sheet data: starts clean at 0)
 export function getLocalMarks(): Record<string, Record<number, number>> {
   try {
@@ -41,6 +56,7 @@ export function getLocalMarks(): Record<string, Record<number, number>> {
 export function clearAllLocalMarks(): void {
   try {
     localStorage.removeItem(LOCAL_MARKS_KEY);
+    localStorage.removeItem(SYNCED_STUDENTS_KEY);
   } catch {}
 }
 
@@ -135,15 +151,32 @@ export async function syncAllStudentsFromGoogleSheet(): Promise<{
       };
     }
 
-    // Save all marks into local marks storage
+    // Save all marks and student roster into local storage
     const newMarksMap: Record<string, Record<number, number>> = {};
-    data.students.forEach((st: { ic: string; marks?: Record<number, number> }) => {
-      if (st.ic && st.marks) {
-        newMarksMap[cleanIC(st.ic)] = st.marks;
+    const syncedRoster: StudentRecord[] = [];
+
+    data.students.forEach((st: { bil?: number; name?: string; klass?: string; ic: string; marks?: Record<number, number> }, idx: number) => {
+      const clean = cleanIC(st.ic);
+      if (clean) {
+        if (st.marks) {
+          newMarksMap[clean] = st.marks;
+        }
+        if (st.name) {
+          syncedRoster.push({
+            bil: Number(st.bil) || (idx + 1),
+            name: String(st.name).trim(),
+            klass: String(st.klass || '').trim(),
+            ic: clean,
+          });
+        }
       }
     });
 
     localStorage.setItem(LOCAL_MARKS_KEY, JSON.stringify(newMarksMap));
+    if (syncedRoster.length > 0) {
+      localStorage.setItem(SYNCED_STUDENTS_KEY, JSON.stringify(syncedRoster));
+    }
+
     return {
       success: true,
       message: `Berjaya menyegerakkan data ${data.students.length} murid secara langsung dari Google Sheet!`,
@@ -234,8 +267,9 @@ export async function fetchKemajuanMurid(ic: string): Promise<SemakKemajuanResul
     }
   }
 
-  // Fallback to local roster from Google Sheet CSV
-  const localStudent = findLocalStudent(targetIc);
+  // Fallback to local roster from Google Sheet CSV or synced data
+  const allStudents = getSyncedStudents();
+  const localStudent = allStudents.find((s) => cleanIC(s.ic) === targetIc) || findLocalStudent(targetIc);
   if (!localStudent) {
     return {
       ok: false,

@@ -1,6 +1,6 @@
 import { INITIAL_STUDENTS, cleanIC } from '../data/studentsData';
 import { SURAH_LIST } from '../data/surahData';
-import { getLocalMarks } from './appsScriptService';
+import { getLocalMarks, getSyncedStudents } from './appsScriptService';
 
 const LOGIN_STATS_KEY = 'hafazan_student_logins';
 
@@ -89,6 +89,7 @@ export interface YearCompletionStat {
 export function calculateComprehensiveAnalytics() {
   const marksMap = getLocalMarks();
   const loginsMap = getStudentLogins();
+  const students = getSyncedStudents();
 
   // Helper to inspect a student's marks
   const getStudentMarks = (ic: string) => marksMap[cleanIC(ic)] || {};
@@ -96,7 +97,7 @@ export function calculateComprehensiveAnalytics() {
   // 1. By Class
   const classes = ['5 Al-Lail', '5 As-Syam'];
   const classStats: ClassAnalytics[] = classes.map((cls) => {
-    const studentsInClass = INITIAL_STUDENTS.filter((s) => s.klass.toLowerCase().includes(cls.toLowerCase()));
+    const studentsInClass = students.filter((s) => s.klass.toLowerCase().includes(cls.toLowerCase()));
     let totalMarks = 0;
     let totalSurahs = 0;
     let y1Count = 0;
@@ -149,7 +150,7 @@ export function calculateComprehensiveAnalytics() {
   // 2. By Gender
   const genders: ('Lelaki' | 'Perempuan')[] = ['Lelaki', 'Perempuan'];
   const genderStats: GenderAnalytics[] = genders.map((gen) => {
-    const studentsInGender = INITIAL_STUDENTS.filter((s) => detectGender(s.name) === gen);
+    const studentsInGender = students.filter((s) => detectGender(s.name) === gen);
     let totalMarks = 0;
     let totalSurahs = 0;
     let y1Count = 0;
@@ -192,14 +193,14 @@ export function calculateComprehensiveAnalytics() {
   // 3. By Surah (all 41 surahs)
   const surahStats: SurahMasteryStat[] = SURAH_LIST.map((surah, idx) => {
     let completedCount = 0;
-    INITIAL_STUDENTS.forEach((s) => {
+    students.forEach((s) => {
       const m = getStudentMarks(s.ic);
       if (m[idx] && m[idx] > 0) {
         completedCount++;
       }
     });
 
-    const totalStudents = INITIAL_STUDENTS.length;
+    const totalStudents = students.length;
     const percentage = Math.round((completedCount / totalStudents) * 100);
 
     return {
@@ -217,7 +218,7 @@ export function calculateComprehensiveAnalytics() {
     const surahsInYear = SURAH_LIST.filter((s) => s.y === yr);
     let fullCompletedStudents = 0;
 
-    INITIAL_STUDENTS.forEach((s) => {
+    students.forEach((s) => {
       const m = getStudentMarks(s.ic);
       const isYearDone = surahsInYear.every((surah) => {
         const idx = SURAH_LIST.findIndex((item) => item.n === surah.n);
@@ -226,7 +227,7 @@ export function calculateComprehensiveAnalytics() {
       if (isYearDone) fullCompletedStudents++;
     });
 
-    const totalStudents = INITIAL_STUDENTS.length;
+    const totalStudents = students.length;
     const percentage = Math.round((fullCompletedStudents / totalStudents) * 100);
 
     return {
@@ -238,7 +239,7 @@ export function calculateComprehensiveAnalytics() {
   });
 
   // 5. Murid Log In Terbanyak
-  const topLogins: StudentLoginStat[] = INITIAL_STUDENTS.map((s) => ({
+  const topLogins: StudentLoginStat[] = students.map((s) => ({
     ic: s.ic,
     name: s.name,
     klass: s.klass,
@@ -254,6 +255,6 @@ export function calculateComprehensiveAnalytics() {
     surahStats,
     yearCompletionStats,
     topLogins,
-    totalStudents: INITIAL_STUDENTS.length,
+    totalStudents: students.length,
   };
 }

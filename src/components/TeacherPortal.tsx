@@ -2,32 +2,23 @@ import React, { useState, useEffect } from 'react';
 import {
   Users,
   BarChart3,
-  BookOpen,
-  Calendar,
-  Sparkles,
-  Download,
-  Link2,
-  CheckCircle2,
   Award,
   Search,
-  Edit3,
-  TrendingUp,
   Layers,
   Flame,
-  Check,
   RotateCcw,
   RefreshCw,
+  Link2,
+  Download,
 } from 'lucide-react';
 import {
   calculateComprehensiveAnalytics,
   detectGender,
-  StudentLoginStat,
-  clearStudentLogins,
 } from '../services/studentStatsService';
-import { INITIAL_STUDENTS } from '../data/studentsData';
 import { SURAH_LIST, YEAR_COLORS } from '../data/surahData';
 import {
   getLocalMarks,
+  getSyncedStudents,
   generateUpdatedCSV,
   clearAllLocalMarks,
   syncAllStudentsFromGoogleSheet,
@@ -37,14 +28,12 @@ import { StudentRecord } from '../types/hafazan';
 interface TeacherPortalProps {
   onLogout: () => void;
   onOpenAppsScript: () => void;
-  onSelectStudentToGrade: (student: StudentRecord) => void;
   appsScriptConfigured: boolean;
 }
 
 export const TeacherPortal: React.FC<TeacherPortalProps> = ({
   onLogout,
   onOpenAppsScript,
-  onSelectStudentToGrade,
   appsScriptConfigured,
 }) => {
   const [activeTab, setActiveTab] = useState<'analytics' | 'students'>('analytics');
@@ -55,11 +44,16 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncFeedback, setSyncFeedback] = useState<{ success: boolean; message: string } | null>(null);
 
+  const [marksMap, setMarksMap] = useState<Record<string, Record<number, number>>>(() => getLocalMarks());
+  const [studentsList, setStudentsList] = useState<StudentRecord[]>(() => getSyncedStudents());
+
   // Auto-sync in background on mount if Apps Script is configured
   useEffect(() => {
     if (appsScriptConfigured) {
       syncAllStudentsFromGoogleSheet().then((res) => {
         if (res.success) {
+          setMarksMap(getLocalMarks());
+          setStudentsList(getSyncedStudents());
           setRefreshKey((prev) => prev + 1);
         }
       });
@@ -73,21 +67,22 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
     setIsSyncing(false);
     setSyncFeedback(result);
     if (result.success) {
+      setMarksMap(getLocalMarks());
+      setStudentsList(getSyncedStudents());
       setRefreshKey((prev) => prev + 1);
-      setTimeout(() => setSyncFeedback(null), 5000);
+      setTimeout(() => setSyncFeedback(null), 6000);
     }
   };
 
   const analytics = calculateComprehensiveAnalytics();
-  const marksMap = getLocalMarks();
 
   // Filtered surah list for mastery inspection
   const filteredSurahs = analytics.surahStats.filter(
     (s) => surahYearFilter === 'all' || s.year === surahYearFilter
   );
 
-  // Filtered 68 students for teacher grading table
-  const filteredStudents = INITIAL_STUDENTS.filter((s) => {
+  // Filtered 68 students from synced Google Sheet roster
+  const filteredStudents = studentsList.filter((s) => {
     const matchSearch =
       s.name.toLowerCase().includes(studentSearch.toLowerCase()) ||
       s.ic.toLowerCase().includes(studentSearch.toLowerCase());
@@ -110,8 +105,11 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
 
   const handleResetToOriginalData = () => {
     clearAllLocalMarks();
-    clearStudentLogins();
+    setMarksMap({});
+    setStudentsList(getSyncedStudents());
     setRefreshKey((prev) => prev + 1);
+    setSyncFeedback({ success: true, message: 'Data tempatan diset semula. Sila tekan Segerak untuk memuat data Google Sheet.' });
+    setTimeout(() => setSyncFeedback(null), 4000);
   };
 
   return (
@@ -128,31 +126,21 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
               Portal Analisa & Pengurusan Guru
             </h1>
             <p className="text-xs sm:text-sm text-[var(--muted)] mt-1">
-              Pantau kemajuan 68 murid Tahun 5 (Al-Lail & As-Syam) bagi persediaan Hafazan Tahun 6 2027.
+              Markah dikemas kini terus di Google Sheet. Tekan &quot;Segerak Dari Google Sheet&quot; untuk mengemas kini semua analisa secara langsung.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-            {/* Sync from Google Sheet Button */}
+            {/* Sync from Google Sheet Button (UTAMA) */}
             <button
               type="button"
               disabled={isSyncing}
               onClick={handleSyncGoogleSheet}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[var(--gold)] hover:bg-[#ffc65c] text-[#241800] text-xs font-bold transition-all shadow-md cursor-pointer disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[var(--gold)] hover:bg-[#ffc65c] text-[#241800] text-xs font-bold transition-all shadow-lg cursor-pointer disabled:opacity-50 active:scale-95"
               title="Segerak semua markah murid terus dari fail Google Sheet"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
               <span>{isSyncing ? 'Menyegerakkan...' : 'Segerak Dari Google Sheet'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleResetToOriginalData}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[var(--panel-2)] border border-[var(--line)] hover:border-[var(--rose)] text-xs font-semibold text-[var(--muted)] hover:text-[var(--rose)] transition-colors cursor-pointer"
-              title="Kosongkan sebarang markah demo dan kembalikan ke data asli (0 markah)"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Set Semula Data Asli</span>
             </button>
 
             <button
@@ -166,6 +154,16 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
             >
               <Link2 className="w-3.5 h-3.5" />
               <span>{appsScriptConfigured ? 'Apps Script Bersambung' : 'Sambung Google Sheet'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleResetToOriginalData}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[var(--panel-2)] border border-[var(--line)] hover:border-[var(--rose)] text-xs font-semibold text-[var(--muted)] hover:text-[var(--rose)] transition-colors cursor-pointer"
+              title="Kosongkan memori sementara pelayar"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Set Semula Cache</span>
             </button>
 
             <button
@@ -224,7 +222,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
             }`}
           >
             <Users className="w-4 h-4" />
-            <span>Senarai & Kemas Kini 68 Murid</span>
+            <span>Senarai Rekod 68 Murid (Google Sheet)</span>
           </button>
         </div>
       </section>
@@ -322,7 +320,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
                             Murid {gen.gender}
                           </h4>
                           <span className="text-xs text-[var(--muted)] font-mono">
-                            {gen.totalStudents} orang ({Math.round((gen.totalStudents / 68) * 100)}%)
+                            {gen.totalStudents} orang ({Math.round((gen.totalStudents / (analytics.totalStudents || 68)) * 100)}%)
                           </span>
                         </div>
                       </div>
@@ -357,7 +355,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
                   Analisa Ikut Tahun Surah Selesai (Lencana Tahun 1 - 6)
                 </h3>
                 <p className="text-xs text-[var(--muted)]">
-                  Bilangan murid yang telah melengkapkan kesemua surah mengikut silibus tahun berkenaan.
+                  Bilangan murid yang telah melengkapkan kesemua surah mengikut silibus tahun berkenaan (berdasarkan Google Sheet).
                 </p>
               </div>
             </div>
@@ -384,7 +382,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
                       <b className="text-2xl font-display text-[var(--ink)] block">
                         {y.completedCount}
                       </b>
-                      <span className="text-[10px] text-[var(--muted)]">/ 68 murid</span>
+                      <span className="text-[10px] text-[var(--muted)]">/ {analytics.totalStudents} murid</span>
                     </div>
 
                     <div className="w-full bg-[var(--night)] rounded-full h-2 overflow-hidden border border-[var(--line)]">
@@ -468,7 +466,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
                   Analisa Ikut Surah (Kadar Penguasaan 41 Surah)
                 </h3>
                 <p className="text-xs text-[var(--muted)]">
-                  Kadar lulus murid bagi setiap surah mengikut turutan kurikulum.
+                  Kadar lulus murid bagi setiap surah mengikut turutan kurikulum dari Google Sheet.
                 </p>
               </div>
 
@@ -547,16 +545,16 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
         </div>
       )}
 
-      {/* TAB 2: SENARAI 68 MURID & KEMAS KINI */}
+      {/* TAB 2: SENARAI 68 MURID (DATA GOOGLE SHEET) */}
       {activeTab === 'students' && (
         <section className="bg-[var(--panel)] border-2 border-[var(--line)] rounded-3xl p-5 sm:p-6 shadow-md space-y-4">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-[var(--line)]">
             <div>
               <h3 className="font-display text-lg sm:text-xl text-[var(--ink)]">
-                Pengurusan & Kemas Kini Markah 68 Murid
+                Senarai Rekod 68 Murid (Google Sheet)
               </h3>
               <p className="text-xs text-[var(--muted)]">
-                Klik butang &quot;Kemas Kini Markah&quot; pada mana-mana murid untuk menandakan surah yang selesai dihafal.
+                Markah murid dikemas kini oleh guru di dalam Google Sheet. Tekan butang &quot;Segerak Dari Google Sheet&quot; untuk memuatkan data terkini.
               </p>
             </div>
 
@@ -566,7 +564,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[var(--gold)] hover:bg-[#ffc65c] text-[#241800] text-xs font-bold transition-colors cursor-pointer shrink-0"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Muat Turun Fail CSV (Google Sheet)</span>
+              <span>Muat Turun Fail CSV</span>
             </button>
           </div>
 
@@ -595,7 +593,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
                       : 'bg-[var(--panel-2)] text-[var(--muted)] border border-[var(--line)]'
                   }`}
                 >
-                  {cls === 'all' ? 'Semua (68)' : cls}
+                  {cls === 'all' ? `Semua (${studentsList.length})` : cls}
                 </button>
               ))}
             </div>
@@ -612,14 +610,15 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
                     <th className="py-3 px-3">KELAS</th>
                     <th className="py-3 px-3">NO. IC</th>
                     <th className="py-3 px-3">JANTINA</th>
-                    <th className="py-3 px-3 text-center">MARKAH</th>
-                    <th className="py-3 px-4 text-right">TINDAKAN</th>
+                    <th className="py-3 px-3 text-center">MARKAH (SHEET)</th>
+                    <th className="py-3 px-4 text-right">STATUS SURAH</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--line)]/50 font-mono">
                   {filteredStudents.map((s) => {
                     const m = marksMap[s.ic] || {};
                     const totalMarks = SURAH_LIST.reduce((sum, _, idx) => sum + (m[idx] || 0), 0);
+                    const completedSurahsCount = SURAH_LIST.filter((_, idx) => m[idx] && m[idx] > 0).length;
                     const gender = detectGender(s.name);
 
                     return (
@@ -646,14 +645,15 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
                           <span className="text-[10px] text-[var(--muted)]">/100</span>
                         </td>
                         <td className="py-3 px-4 text-right font-sans">
-                          <button
-                            type="button"
-                            onClick={() => onSelectStudentToGrade(s)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--panel-2)] hover:bg-[var(--line)] border border-[var(--gold)]/40 hover:border-[var(--gold)] text-[var(--gold)] text-xs font-bold transition-all cursor-pointer"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                            <span>Kemas Kini</span>
-                          </button>
+                          <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${
+                            completedSurahsCount === 41
+                              ? 'bg-[var(--gold)]/20 text-[var(--gold)] border border-[var(--gold)]/40'
+                              : completedSurahsCount > 0
+                              ? 'bg-[var(--mint)]/15 text-[var(--mint)] border border-[var(--mint)]/30'
+                              : 'bg-[var(--panel-2)] text-[var(--muted)]'
+                          }`}>
+                            {completedSurahsCount} / 41 Surah
+                          </span>
                         </td>
                       </tr>
                     );

@@ -142,7 +142,7 @@ function bersihkanIC(ic) {
 function semakKemajuan(inputIc) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getActiveSheet();
+    var sheet = ss.getSheetByName("REKOD HAFAZAN TAHUN 6 2027") || ss.getActiveSheet();
     var allData = sheet.getDataRange().getValues();
     
     var targetIc = bersihkanIC(inputIc);
@@ -170,8 +170,13 @@ function semakKemajuan(inputIc) {
           var val = row[startSurahCol + s];
           var got = null;
           
-          if (val !== "" && val !== null && val !== undefined && !isNaN(val)) {
-            got = Number(val);
+          if (val !== "" && val !== null && val !== undefined) {
+            var num = Number(val);
+            if (!isNaN(num) && num > 0) {
+              got = num;
+            } else if (String(val).trim() !== "" && String(val).trim() !== "0") {
+              got = SENARAI_SURAH[s].max;
+            }
           }
           
           surahs.push({
@@ -271,7 +276,7 @@ function simpanMarkah(inputIc, surahIndex, markah) {
 function dapatkanSemuaDataMurid() {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getActiveSheet();
+    var sheet = ss.getSheetByName("REKOD HAFAZAN TAHUN 6 2027") || ss.getActiveSheet();
     var allData = sheet.getDataRange().getValues();
     var muridList = [];
 
@@ -288,15 +293,21 @@ function dapatkanSemuaDataMurid() {
         var marks = {};
         for (var s = 0; s < SENARAI_SURAH.length; s++) {
           var val = row[startSurahCol + s];
-          if (val !== "" && val !== null && val !== undefined && !isNaN(val)) {
-            marks[s] = Number(val);
+          if (val !== "" && val !== null && val !== undefined) {
+            var num = Number(val);
+            if (!isNaN(num) && num > 0) {
+              marks[s] = num;
+            } else if (String(val).trim() !== "" && String(val).trim() !== "0") {
+              // Jika ditanda dengan simbol semakan
+              marks[s] = SENARAI_SURAH[s].max;
+            }
           }
         }
 
         muridList.push({
           bil: bil,
-          name: namaMurid,
-          klass: kelas,
+          name: String(namaMurid).trim(),
+          klass: String(kelas).trim(),
           ic: noIc,
           marks: marks
         });

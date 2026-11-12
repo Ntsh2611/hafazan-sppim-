@@ -9,8 +9,7 @@ import { LoginSection } from './components/LoginSection';
 import { Dashboard } from './components/Dashboard';
 import { TeacherPortal } from './components/TeacherPortal';
 import { AppsScriptModal } from './components/AppsScriptModal';
-import { TeacherRecordModal } from './components/TeacherRecordModal';
-import { SemakKemajuanResult, StudentRecord } from './types/hafazan';
+import { SemakKemajuanResult } from './types/hafazan';
 import { fetchKemajuanMurid, getSavedAppsScriptUrl } from './services/appsScriptService';
 import { recordStudentLogin } from './services/studentStatsService';
 import { cleanIC } from './data/studentsData';
@@ -27,7 +26,6 @@ export default function App() {
 
   const [appsScriptUrl, setAppsScriptUrl] = useState<string>(() => getSavedAppsScriptUrl());
   const [isAppsScriptModalOpen, setIsAppsScriptModalOpen] = useState<boolean>(false);
-  const [studentToGrade, setStudentToGrade] = useState<SemakKemajuanResult | null>(null);
 
   // Handle Search / Login
   const handleSearch = useCallback(async (rawIc: string, isAutoRestore: boolean = false) => {
@@ -113,14 +111,6 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
-  // When teacher clicks "Kemas Kini" on a student in the directory table
-  const handleSelectStudentToGrade = async (student: StudentRecord) => {
-    const res = await fetchKemajuanMurid(student.ic);
-    if (res.ok) {
-      setStudentToGrade(res);
-    }
-  };
-
   return (
     <div className="min-h-screen flex flex-col justify-between px-4 sm:px-6 lg:px-8 max-w-5xl mx-auto py-4">
       {/* Top Header / Navigation */}
@@ -139,7 +129,6 @@ export default function App() {
             <TeacherPortal
               onLogout={handleLogout}
               onOpenAppsScript={() => setIsAppsScriptModalOpen(true)}
-              onSelectStudentToGrade={handleSelectStudentToGrade}
               appsScriptConfigured={!!appsScriptUrl}
             />
           ) : activeStudent ? (
@@ -164,26 +153,12 @@ export default function App() {
         </p>
       </footer>
 
-      {/* Modals */}
+      {/* Modal Konfigurasi Apps Script (Khusus Guru Sahaja) */}
       <AppsScriptModal
         isOpen={isAppsScriptModalOpen}
         onClose={() => setIsAppsScriptModalOpen(false)}
         onUrlUpdated={(url) => setAppsScriptUrl(url)}
       />
-
-      {studentToGrade && (
-        <TeacherRecordModal
-          isOpen={!!studentToGrade}
-          onClose={() => setStudentToGrade(null)}
-          data={studentToGrade}
-          onDataUpdated={async () => {
-            const refreshed = await fetchKemajuanMurid(studentToGrade.ic);
-            if (refreshed.ok) {
-              setStudentToGrade(refreshed);
-            }
-          }}
-        />
-      )}
     </div>
   );
 }
