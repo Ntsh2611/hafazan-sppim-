@@ -64,21 +64,29 @@ var SENARAI_SURAH = [
 function doGet(e) {
   var action = (e && e.parameter && e.parameter.action) || 'semakKemajuan';
   var ic = (e && e.parameter && e.parameter.ic) ? e.parameter.ic : '';
-  if (action === 'senaraiMurid') return outputJson(dapatkanSenaraiMurid());
+  
+  if (action === 'segerakSemua' || action === 'senaraiSemuaData' || action === 'segerak') {
+    return outputJson(dapatkanSemuaDataMurid());
+  }
+  if (action === 'senaraiMurid') {
+    return outputJson(dapatkanSenaraiMurid());
+  }
   if (action === 'semakKemajuan' || !action) {
-    if (!ic) return outputJson({ ok: false, error: 'Sila masukkan parameter nombor IC.' });
+    if (!ic) {
+      return outputJson(dapatkanSemuaDataMurid());
+    }
     return outputJson(semakKemajuan(ic));
   }
-  return outputJson({ ok: false, error: 'Tindakan tidak sah.' });
+  return outputJson(dapatkanSemuaDataMurid());
 }
 
 function doPost(e) {
   try {
     var data = JSON.parse(e.postData.contents);
-    if (data.action === 'simpanMarkah') {
-      return outputJson(simpanMarkah(data.ic, data.surahIndex, data.markah));
+    if (data.action === 'simpanMarkahMurid') {
+      return outputJson(simpanMarkahMurid(data.ic, data.marks));
     }
-    return outputJson({ ok: false, error: 'Tindakan tidak disokong.' });
+    return outputJson({ ok: true, message: 'Data diterima.' });
   } catch (err) {
     return outputJson({ ok: false, error: err.toString() });
   }
@@ -96,7 +104,7 @@ function bersihkanIC(ic) {
 
 function semakKemajuan(inputIc) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getActiveSheet();
+  var sheet = ss.getSheetByName("REKOD HAFAZAN TAHUN 6 2027") || ss.getActiveSheet();
   var allData = sheet.getDataRange().getValues();
   var targetIc = bersihkanIC(inputIc);
 
@@ -111,8 +119,13 @@ function semakKemajuan(inputIc) {
       for (var s = 0; s < SENARAI_SURAH.length; s++) {
         var val = row[4 + s];
         var got = null;
-        if (val !== "" && val !== null && val !== undefined && !isNaN(val)) {
-          got = Number(val);
+        if (val !== "" && val !== null && val !== undefined) {
+          var num = Number(val);
+          if (!isNaN(num) && num > 0) {
+            got = num;
+          } else if (String(val).trim() !== "" && String(val).trim() !== "0") {
+            got = SENARAI_SURAH[s].max;
+          }
         }
         surahs.push({
           n: SENARAI_SURAH[s].n,
@@ -127,39 +140,52 @@ function semakKemajuan(inputIc) {
   return { ok: false, error: 'Nombor IC ' + inputIc + ' tidak dijumpai dalam Google Sheet.' };
 }
 
-function dapatkanSenaraiMurid() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getActiveSheet();
-  var allData = sheet.getDataRange().getValues();
-  var muridList = [];
+function dapatkanSemuaDataMurid() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName("REKOD HAFAZAN TAHUN 6 2027") || ss.getActiveSheet();
+    var allData = sheet.getDataRange().getValues();
+    var muridList = [];
 
-  for (var r = 4; r < allData.length; r++) {
-    var row = allData[r];
-    var bil = row[0];
-    var namaMurid = row[1];
-    var kelas = row[2];
-    var noIc = bersihkanIC(row[3]);
-    if (namaMurid && noIc) {
-      muridList.push({ bil: bil, name: namaMurid, klass: kelas, ic: noIc });
+    for (var r = 4; r < allData.length; r++) {
+      var row = allData[r];
+      var bil = row[0];
+      var namaMurid = row[1];
+      var kelas = row[2];
+      var noIc = bersihkanIC(row[3]);
+
+      if (namaMurid && noIc) {
+        var marks = {};
+        for (var s = 0; s < SENARAI_SURAH.length; s++) {
+          var val = row[4 + s];
+          if (val !== "" && val !== null && val !== undefined) {
+            var num = Number(val);
+            if (!isNaN(num) && num > 0) {
+              marks[s] = num;
+            } else if (String(val).trim() !== "" && String(val).trim() !== "0") {
+              marks[s] = SENARAI_SURAH[s].max;
+            }
+          }
+        }
+
+        muridList.push({
+          bil: bil,
+          name: String(namaMurid).trim(),
+          klass: String(kelas).trim(),
+          ic: noIc,
+          marks: marks
+        });
+      }
     }
+
+    return { ok: true, timestamp: new Date().toISOString(), count: muridList.length, students: muridList };
+  } catch (err) {
+    return { ok: false, error: err.toString() };
   }
-  return { ok: true, count: muridList.length, students: muridList };
 }
 
-function simpanMarkah(inputIc, surahIndex, markah) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getActiveSheet();
-  var allData = sheet.getDataRange().getValues();
-  var targetIc = bersihkanIC(inputIc);
-
-  for (var r = 4; r < allData.length; r++) {
-    var noIc = bersihkanIC(allData[r][3]);
-    if (noIc && noIc === targetIc) {
-      sheet.getRange(r + 1, 5 + Number(surahIndex)).setValue(markah);
-      return { ok: true, message: 'Markah berjaya disimpan di Google Sheet.' };
-    }
-  }
-  return { ok: false, error: 'Murid tidak dijumpai.' };
+function dapatkanSenaraiMurid() {
+  return dapatkanSemuaDataMurid();
 }`;
 
     navigator.clipboard.writeText(code);

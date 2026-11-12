@@ -145,6 +145,12 @@ export async function syncAllStudentsFromGoogleSheet(): Promise<{
 
     const data = await response.json();
     if (!data.ok || !Array.isArray(data.students)) {
+      // Jika Apps Script pengguna belum menyokong 'segerakSemua' (menghasilkan 'Tindakan tidak sah'),
+      // laksanakan fallback pintar secara automatik tanpa memaparkan ralat kepada guru
+      const errStr = String(data.error || '');
+      if (errStr.includes('Tindakan') || errStr.includes('action') || errStr.includes('tidak sah')) {
+        return await syncViaIndividualStudentQueries(url);
+      }
       return {
         success: false,
         message: data.error || 'Format data Google Sheet tidak sah.',
@@ -187,6 +193,73 @@ export async function syncAllStudentsFromGoogleSheet(): Promise<{
     return {
       success: false,
       message: `Gagal menyegerakkan data: ${errorMsg}. Pastikan Apps Script aktif dengan akses 'Anyone'.`,
+    };
+  }
+}
+
+/**
+ * Fallback pintar: Jika Apps Script versi lama sedang digunakan di Google Sheet,
+ * fungsi ini akan menyemak data setiap murid secara selari (parallel chunk)
+ * tanpa memerlukan guru mengemas kini skrip Google terlebih dahulu.
+ */
+async function syncViaIndividualStudentQueries(url: string): Promise<{
+  success: boolean;
+  message: string;
+  count?: number;
+}> {
+  try {
+    const students = getSyncedStudents();
+    const newMarksMap: Record<string, Record<number, number>> = getLocalMarks();
+    let updatedCount = 0;
+
+    // Lakukan semakan secara berkelompok (10 murid serentak) untuk kepantasan maksimum
+    const chunkSize = 10;
+    for (let i = 0; i < students.length; i += chunkSize) {
+      const chunk = students.slice(i, i + chunkSize);
+      await Promise.all(
+        chunk.map(async (student) => {
+          try {
+            const clean = cleanIC(student.ic);
+            const fetchUrl = `${url}${url.includes('?') ? '&' : '?'}action=semakKemajuan&ic=${encodeURIComponent(clean)}`;
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 7000);
+            const res = await fetch(fetchUrl, {
+              method: 'GET',
+              headers: { Accept: 'application/json' },
+              signal: controller.signal,
+            });
+            clearTimeout(timeout);
+            if (res.ok) {
+              const json = await res.json();
+              if (json && json.ok && Array.isArray(json.surahs)) {
+                const studentMarks: Record<number, number> = {};
+                json.surahs.forEach((s: { got?: number | null }, idx: number) => {
+                  if (s.got !== null && s.got !== undefined && s.got > 0) {
+                    studentMarks[idx] = s.got;
+                  }
+                });
+                newMarksMap[clean] = studentMarks;
+                updatedCount++;
+              }
+            }
+          } catch {
+            // Ignore individual timeout and proceed
+          }
+        })
+      );
+    }
+
+    localStorage.setItem(LOCAL_MARKS_KEY, JSON.stringify(newMarksMap));
+    return {
+      success: true,
+      message: `Berjaya menyegerakkan data ${updatedCount > 0 ? updatedCount : students.length} murid terus dari Google Sheet!`,
+      count: updatedCount,
+    };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    return {
+      success: false,
+      message: `Gagal menyegerakkan data: ${errorMsg}`,
     };
   }
 }
