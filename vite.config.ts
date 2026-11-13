@@ -11,6 +11,11 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
+        workbox: {
+          cleanupOutdatedCaches: true,
+          clientsClaim: true,
+          skipWaiting: true,
+        },
         includeAssets: ['icons/*.png', 'icons/*.svg'],
         manifest: {
           name: 'Hafazan Tracker SPPIM 2027',
